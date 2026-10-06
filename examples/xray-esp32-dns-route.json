@@ -1,0 +1,7 @@
+{
+  "type": "field",
+  "source": ["192.168.1.103/32"],
+  "network": "tcp,udp",
+  "port": "53",
+  "outboundTag": "esp32-dns"
+}

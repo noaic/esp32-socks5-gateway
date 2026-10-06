@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ESP32 网关管理</title>
+<style>
+body{font:16px system-ui,sans-serif;margin:auto;padding:18px;max-width:850px;background:#f3f5f8;color:#182335}section{background:white;padding:18px;margin:16px 0;border-radius:12px}h1{font-size:24px}h2{font-size:19px}label{display:block;margin:12px 0}input,select,button{font:inherit;padding:9px;border:1px solid #b6c1d0;border-radius:6px;box-sizing:border-box}input:not([type=checkbox]),select{display:block;width:100%;margin-top:5px}button{background:#245ac7;color:white;margin:5px 8px 5px 0;cursor:pointer}button:disabled{opacity:.5}p,small{line-height:1.6}pre{white-space:pre-wrap;font:14px system-ui;line-height:1.8}#operation{background:#e7eefc;padding:12px;border-radius:8px;white-space:pre-wrap}#message{position:sticky;top:0;background:#e7eefc;padding:12px;border-radius:8px;white-space:pre-wrap}.client{padding:12px 0;border-top:1px solid #ddd}.warn{color:#994100}details{margin-top:12px}fieldset{border:1px solid #d8dfe8;border-radius:8px;margin:18px 0;padding:12px}legend{font-weight:600;padding:0 6px}
+</style>
+<h1>ESP32 网关管理</h1><p>IPv4 · AP+STA · SOCKS5 · 最多两台客户端</p>
+<div id="message" role="status">正在读取状态…</div>
+<p id="operation" role="status" hidden></p><p id="recoveryLink" hidden><a id="managementLink">打开管理页面</a> · 请保持连接本设备 AP。</p>
+<section id="trial" hidden><h2>新配置待确认</h2><p id="trialText"></p><p>请先验证两台设备能联网。确认后保留新配置；不确认则自动恢复上一份。若修改过管理密码，请用新密码登录。</p><button id="confirm">确认保留配置</button></section>
+<section><h2>运行状态</h2><pre id="status">读取中…</pre><button id="refresh">刷新状态</button><small>前台每 10 秒刷新，后台暂停。</small><details><summary>诊断指标</summary><pre id="metrics"></pre><p>内存总量指系统登记的可分配堆，不等于芯片全部物理 RAM；“已占用”按总量减剩余计算，包含分配器开销。栈显示历史最大使用量，不是当前使用量。最低内存和错误计数为本次启动以来累计值。上游是否可用请结合实际网页访问判断，互联网检测由下方手动/自动检查设置控制。</p></details></section>
+<section><h2>连接状态与维护</h2><pre id="health">读取中…</pre>
+<p>紫灯表示 AP+STA 就绪；绿灯表示最近 10 分钟内通过 SOCKS5 的 DNS+HTTP 检查成功。结果仅覆盖检测目标，不保证所有网站或 QUIC 正常。</p>
+<label><input id="ledEnabled" type="checkbox"> 开启 GPIO48 RGB 状态灯（低亮度，立即保存，无需重启）</label><small id="ledStatus"></small>
+<p>蓝：上游未配置；红：STA 未就绪；紫：网络就绪、检查中或结果未知/过期；绿：最近检查成功；黄：网段冲突或当前检测目标连续两次检查失败。</p>
+<button data-action="reconnect">重连上游 Wi-Fi</button><button data-action="relay_reset">重建代理连接</button><button data-action="reboot">重启设备</button>
+<p>重连上游会中断代理流量，保留本地 AP；重建会关闭现有 TCP/UDP 代理连接。重启会断开所有连接，但不清除配置或口令。</p>
+<button data-action="diagnose">运行连接诊断</button><pre id="job"></pre>
+<p>诊断仅检查配置的上游端口、NO AUTH 握手，以及通过 SOCKS5 UDP 请求 example.com 的 IPv4 DNS 回包。不直接探测 VPS、不自动周期运行；结果不代表所有网站都可用。</p>
+<fieldset><legend>互联网检查</legend><pre id="internetStatus"></pre>
+<label><input id="internetAuto" type="checkbox"> 开启低频自动检查（点击保存后生效，无需重启）</label>
+<label>检测目标<select id="internetTarget"><option value="0">微软：HTTP 200 + 短文本</option><option value="1">Android：HTTP 204</option></select></label>
+<button id="saveInternet">保存检查设置</button><button data-action="internet">立即检查互联网</button><pre id="internetSteps"></pre>
+<p>请求全部经过配置的 SOCKS5，不直连兜底。正常每 5 分钟检查；失败按 30/60/120/240/300 秒退避。自动检查在上游就绪且网络配置已确认时运行，维护任务繁忙时等待。关闭自动检查后仍可手动检查，绿色结果在 10 分钟后过期。不因失败自动重启或重建代理。</p></fieldset>
+<details><summary>最近事件</summary><pre id="events">读取中…</pre><small>RAM 保留最近 64 条，此处显示最新 32 条；重启清空。相邻重复事件在 10 秒内合并。时间为启动后时间，不记录访问网址。错误代码：负数为 errno，1000+REP 为 SOCKS5 拒绝，2000+METHOD 为认证方法不支持。</small></details>
+</section>
+<section><h2>已连接设备</h2><div id="clients"></div><small>断开仅结束当前连接，不是黑名单；设备可能自动重连。流量为本次连接的代理数据，不含管理页面和所有 Wi-Fi 开销。</small></section>
+<section><h2>网关配置</h2><p>保存后约 2 秒重启，当前连接会断开。重新连接 AP 并打开本页，在 180 秒内确认，否则恢复上一份配置。</p>
+<form id="settings">
+<fieldset><legend>上游网络与代理</legend>
+<label>上游 Wi-Fi SSID<input name="sta_ssid" maxlength="32" autocomplete="off"></label>
+<label>上游 Wi-Fi 密码<input name="sta_password" type="password" maxlength="64" placeholder="留空保留原密码" autocomplete="new-password"></label>
+<label><input name="sta_open" type="checkbox"> 上游 Wi-Fi 无密码（清除原密码）</label>
+<label>SOCKS5 IPv4<input name="socks_ipv4" maxlength="15" required inputmode="decimal"></label>
+<label>SOCKS5 端口<input name="socks_port" type="number" min="1" max="65535" required></label>
+</fieldset>
+<fieldset><legend>本地 AP 与客户端网络</legend>
+<label>AP 名称<input name="ap_ssid" maxlength="32" required></label>
+<label>AP 密码<input name="ap_password" type="password" minlength="8" maxlength="63" placeholder="留空保留原密码" autocomplete="new-password"></label>
+<label>最大接入数<select name="max_clients"><option value="1">1</option><option value="2">2</option></select></label>
+<label>DHCP 下发的 DNS IPv4<input name="dns_ipv4" maxlength="15" required inputmode="decimal"></label>
+<label>AP 网段第三段 X（192.168.X.0/24）<input name="ap_subnet" type="number" min="0" max="255" step="1" required></label>
+<p>网关与管理入口为 192.168.X.1。修改后强制重启，所有设备需重新连接 Wi-Fi；在新地址登录并确认。上游网络不能与本地 AP 网段重叠。若未确认，恢复旧网段后需重连并打开旧地址。</p>
+</fieldset>
+<fieldset><legend>管理安全</legend>
+<label>新管理密码<input name="admin_password" type="password" minlength="12" maxlength="64" placeholder="留空保留原密码；至少 12 字节" autocomplete="new-password"></label>
+</fieldset>
+<p class="warn">SSID 和密码长度按 UTF-8 字节计算。上游为空则仅启动 AP。SOCKS5 只支持 IPv4、NO AUTH。DNS 通过 SOCKS5 UDP 转发，不是本地 DNS 服务。</p>
+<button type="submit">保存并重启</button></form>
+<details><summary>恢复默认配置</summary><p>恢复编译时的 Wi-Fi、默认 SOCKS5、DNS 和两客户端设置；保留当前管理密码。也需要重启后确认。</p><button id="defaults">恢复默认并重启</button></details></section>
+<p>管理入口仅在 AP 上开放。账号为 admin，使用首次访问时自行设置的口令登录。RST/EN 仅重启，不清除口令。请使用可信的个人设备管理；HTTP 未提供独立于 Wi-Fi 的传输加密。</p>
+<script>
+'use strict';
+const el=id=>document.getElementById(id), form=el('settings');let busy=false,polling=false,currentSubnet=4,lastStatus=null,mutationEpoch=0;
+const message=text=>{el('message').textContent=text;};
+async function requestJSON(path,payload){
+ const method=payload===undefined?'GET':'POST';
+ const headers=payload===undefined?{}:{'Content-Type':'application/json','X-Proxy-Action':'manage'};
+ const encoded=payload===undefined?undefined:JSON.stringify(payload);
+ if(typeof AbortController!=='function')return new Promise((resolve,reject)=>{
+  const xhr=new XMLHttpRequest();xhr.open(method,path);xhr.timeout=8000;xhr.withCredentials=true;
+  for(const key of Object.keys(headers))xhr.setRequestHeader(key,headers[key]);
+  xhr.onload=()=>{try{const data=JSON.parse(xhr.responseText);if(xhr.status<200||xhr.status>=300){const error=Error(data.error||`HTTP ${xhr.status}`);error.httpStatus=xhr.status;throw error;}resolve(data);}catch(error){reject(error);}};
+  xhr.ontimeout=()=>reject(Error('请求超时（8 秒）'));xhr.onerror=()=>reject(Error('网络请求失败'));
+  xhr.send(encoded===undefined?null:encoded);
+ });
+ const controller=new AbortController();let expired=false;
+ const timer=setTimeout(()=>{expired=true;controller.abort();},8000);
+ try{
+  const response=await fetch(path,{method,headers,body:encoded,cache:'no-store',credentials:'same-origin',signal:controller.signal});
+  const data=await response.json();if(!response.ok){const error=Error(data.error||`HTTP ${response.status}`);error.httpStatus=response.status;throw error;}return data;
+ }catch(error){if(expired)throw Error('请求超时（8 秒）');throw error;}
+ finally{clearTimeout(timer);}
+}
+
+// Pure feedback state: never retries a mutation, and requires a new boot ID
+// before claiming a restart. A dropped POST response is not a proven failure.
+function createOperationFeedback(){
+ let state=null,notice='',noticeUntil=0;
+ const names={reconnect:'重连上游 Wi-Fi',relay_reset:'重建代理连接',reboot:'重启设备',diagnose:'连接诊断',internet:'互联网检查',config:'保存配置',defaults:'恢复默认配置',led:'状态灯设置',internet_settings:'检查设置',confirm:'确认配置',kick:'断开设备'};
+ const kindIds={reconnect:1,relay_reset:2,reboot:3,diagnose:4,internet:5};
+ const restartKinds=['reboot','config','defaults'];
+ return {
+  begin(kind,status,url,now){state={kind,beforeBoot:status&&status.boot_id,beforeJob:status?status.job_id:0,url,oldUrl:url,started:now,phase:'sending',restart:restartKinds.includes(kind),job:0,changed:false};notice='';},
+  accept(data,now){if(!state)return;state.phase='waiting';state.started=now;state.job=data.job_id||0;state.restart=!!(data.restart||data.reboot);state.changed=!!data.reboot;state.url=data.management_url||state.oldUrl;if(!data.queued&&!state.restart){notice='操作完成。';noticeUntil=now+20000;state=null;}},
+  reject(error,now){if(!state)return;if(error.httpStatus){notice=`操作失败：${error.message}`;noticeUntil=now+30000;state=null;}else{state.phase='uncertain';state.started=now;state.error=error.message;}},
+  observe(status,now){if(!state||state.phase==='sending')return;
+   if(!state.restart&&state.beforeBoot!==undefined&&state.beforeBoot!==null&&status.boot_id!==undefined&&status.boot_id!==state.beforeBoot){notice='设备已重新启动，原操作结果未能确认；请核对当前状态。';noticeUntil=now+30000;state=null;return 'reboot';}
+   if(state.restart){
+    if(state.beforeBoot!==undefined&&state.beforeBoot!==null&&status.boot_id!==undefined&&status.boot_id!==state.beforeBoot){
+     notice=state.changed?(status.pending?'设备已重新启动，新配置待确认；请先验证联网，再点击确认。':'设备已重新启动；当前没有待确认配置，请核对已生效设置。'):'设备已重新启动，配置和口令保留。';noticeUntil=now+30000;state=null;return 'reboot';
+    }
+   }else{
+    if(!state.job&&status.job_id>state.beforeJob&&status.job_action===kindIds[state.kind]&&!status.job_auto)state.job=status.job_id;
+    if(state.job&&status.job_id===state.job&&!status.job_running){notice=status.job_result?`${names[state.kind]}失败：code=${status.job_result}`:state.kind==='reconnect'?'重连请求已执行；请查看 STA 和互联网状态，确认业务恢复。':state.kind==='diagnose'||state.kind==='internet'?`${names[state.kind]}已完成，结果见下方。`:`${names[state.kind]||'操作'}已执行。`;noticeUntil=now+30000;state=null;}
+    else if(state.job&&status.job_id>state.job){notice='原操作已不在当前任务记录中，请查看最近事件及业务状态。';noticeUntil=now+30000;state=null;}
+   }
+  },
+  view(now){
+   if(state&&state.phase!=='sending'&&now-state.started>=90000){notice='等待操作结果已超过 90 秒。请刷新状态并核对配置或最近事件；不要连续重复提交。';noticeUntil=now+60000;state=null;}
+   if(!state)return {blocked:false,restarting:false,text:now<noticeUntil?notice:'',url:null};
+   const seconds=Math.max(0,Math.floor((now-state.started)/1000));
+   let text=state.phase==='sending'?`${names[state.kind]||'操作'}：正在提交…`:state.phase==='uncertain'?`请求未获确认：${state.error}。已提交的操作可能仍会执行，正在读取状态；不会自动重复提交。`:`${names[state.kind]||'操作'}：请求已接受${state.job?'，任务 #'+state.job:''}。`;
+   if(state.restart)text+=`\n等待设备重启和 AP 恢复（${seconds} 秒）。请保持 Wi-Fi 开启，勿再次点击重启。${state.changed?'重连后须在 180 秒内确认新配置；若回滚，请重新打开旧地址 '+state.oldUrl+'。':''}`;
+   else if(state.phase!=='sending')text+=' 等待执行结果…';
+   return {blocked:true,restarting:state.restart,text,url:state.restart?state.url:null,otherAddress:state.url!==state.oldUrl};
+  }
+ };
+}
+const operationFeedback=createOperationFeedback();
+function operationView(){return operationFeedback.view(Date.now());}
+function showOperation(){const v=operationView();el('operation').hidden=!v.text;el('operation').textContent=v.text;el('recoveryLink').hidden=!v.url;if(v.url){el('managementLink').href=v.url;el('managementLink').textContent='打开 '+v.url;}return v;}
+function updateButtons(s){const v=showOperation();for(const b of document.querySelectorAll('button'))b.disabled=busy||v.blocked||!s;el('refresh').disabled=polling;for(const b of document.querySelectorAll('[data-action]'))b.disabled=busy||v.blocked||!s||!!(s&&(s.job_running||!s.control_available));for(const id of ['ledEnabled','internetAuto','internetTarget','saveInternet'])el(id).disabled=busy||v.blocked||!s||!!(s&&(s.job_running||!s.control_available));if(s)el('confirm').disabled=busy||v.blocked||!s.pending;}
+
+const api=requestJSON;
+const ago=(s,ms)=>ms?`${Math.max(0,Math.floor(s.uptime_seconds-ms/1000))} 秒前`:'尚无记录';
+const probeCode=n=>n===7000?'HTTP 正文不符':n>=6000?'HTTP 状态不符 '+(n-6000):n===0?'成功':n===5000?'未执行':n<0?`失败 errno=${-n}`:n>=4000?`DNS 失败 RCODE=${n-4000}`:n===3000?'响应格式无效':n>=2000?`不支持 NO AUTH，METHOD=${n-2000}`:n>=1000?`SOCKS5 拒绝 REP=${n-1000}`:`失败 code=${n}`;
+const actions=['无','重连上游 Wi-Fi','重建代理连接','重启设备','连接诊断','互联网检查','清除管理口令','恢复默认网络'];
+function runtimeStatus(s){
+ el('health').textContent=`转发条件：${s.forwarding_ready?'AP+STA 就绪':'尚未就绪/冲突'}\nSTA 最近断开原因：${s.sta_disconnect_reason}\nTCP 最近 CONNECT 成功：${ago(s,s.tcp_connect_ms)}\nTCP 最近首个响应：${ago(s,s.tcp_data_ms)}\nTCP 上游失败：${s.tcp_errors} 次 · 最近 ${ago(s,s.tcp_error_ms)} · code ${s.tcp_error}\nUDP 最近本地发送回包：${ago(s,s.udp_reply_ms)}\nDNS 最近本地发送回包：${ago(s,s.dns_reply_ms)}\nUDP 关联失败：${s.udp_errors} 次 · 最近 ${ago(s,s.udp_error_ms)} · code ${s.udp_error}`;
+ el('ledEnabled').checked=s.led_enabled;el('ledStatus').textContent=s.led_ready&&!s.led_error?`驱动就绪 · ${['关闭','蓝','红','绿','黄','紫'][s.led_color]||'初始化中'}`:`灯驱动不可用 code=${s.led_error}`;
+ for(const b of document.querySelectorAll('[data-action]'))b.disabled=s.job_running||!s.control_available;
+ const stageNames=['上游 TCP 端口','SOCKS5 NO AUTH','UDP DNS 往返'];
+ el('job').textContent=s.job_id?`任务 #${s.job_id} ${actions[s.job_action]}${s.job_auto?'（自动）':''}：${s.job_running?'执行中…':s.job_result?'执行失败 code='+s.job_result:'执行结束'}${s.job_action===4?'\n'+s.probe.map((p,i)=>`${stageNames[i]}：${probeCode(p.code)}，${p.ms} ms`).join('\n'):''}`:'尚未执行维护或诊断';
+ const internetStates=['未确认（未检查或首次失败）','检查中','最近检查通过','检测目标连续失败','结果已过期'];
+ el('internetAuto').checked=s.internet_auto;el('internetTarget').value=String(s.internet_target);
+ el('internetAuto').disabled=el('internetTarget').disabled=el('saveInternet').disabled=s.job_running||!s.control_available;
+ el('internetStatus').textContent=`状态：${internetStates[s.internet_state]||'未知'}\n目标：${s.internet_url}\n最近完成：${ago(s,s.internet_checked_ms)} · 最近成功：${ago(s,s.internet_success_ms)}\n连续失败：${s.internet_failures} 次 · 结果有效期 ${s.internet_valid_seconds/60} 分钟\n下次自动检查：${s.internet_auto?(s.internet_next_ms?Math.max(0,Math.ceil(s.internet_next_ms/1000-s.uptime_seconds))+' 秒后':'等待上游就绪/配置确认'):'已关闭'}`;
+ const internetStageNames=['上游 TCP 端口','SOCKS5 NO AUTH','UDP DNS 解析 IPv4','SOCKS5 CONNECT + HTTP'];
+ el('internetSteps').textContent=s.internet_checked_ms?s.internet_probe.map((p,i)=>`${internetStageNames[i]}：${probeCode(p.code)}，${p.ms} ms`).join('\n')+`\n目标 IPv4：${s.internet_ipv4} · HTTP ${s.internet_http_status||'—'}`:'尚无当前网络的有效检查结果';
+ if(s.control_stack_min)el('job').textContent+=`\n维护任务栈历史最大使用：${s.control_stack_total-s.control_stack_min} / ${s.control_stack_total} 字节`;
+}
+async function refreshEvents(){try{const r=await api('/api/events');el('events').textContent=r.events.slice().reverse().map(e=>`+${Math.floor(e.last_ms/1000)}s · ${e.event} · detail ${e.detail}${e.count>1?' · '+e.count+' 次':''}`).join('\n')||'暂无事件';}catch(error){el('events').textContent=`事件读取失败：${error.message}`;}}
+const kib=n=>`${(n/1024).toFixed(1)} KiB`,mib=n=>`${(n/1048576).toFixed(2)} MiB`;
+const usage=(free,total,unit)=>`${unit(Math.max(0,total-free))} / ${unit(total)}（已占用 / 总量，剩余 ${unit(free)}）`;
+async function refresh(){if(polling||busy||document.hidden)return;polling=true;const epoch=mutationEpoch;try{const s=await api('/api/status');if(epoch!==mutationEpoch)return;const restarted=operationFeedback.observe(s,Date.now())==='reboot'||!!(lastStatus&&s.boot_id!==undefined&&lastStatus.boot_id!==s.boot_id);lastStatus=s;runtimeStatus(s);el('status').textContent=`固件：${s.firmware}\nAP：${s.ap_ip} · 已连接 ${s.clients.length} / ${s.ap_client_limit} 台\nSTA：${s.sta_connected?'已获得 IPv4':'未就绪'} · ${s.sta_ip}\n上游信号：${s.sta_connected?s.sta_rssi+' dBm / 信道 '+s.channel:'—'}\n运行时间：${Math.floor(s.uptime_seconds/60)} 分钟\n内部可分配堆：${usage(s.internal_free,s.internal_total,kib)}\n启动以来最低剩余：${kib(s.internal_min)}\n最大内部连续块：${kib(s.internal_largest)}\nPSRAM 堆：${usage(s.psram_free,s.psram_total,mib)}`;
+el('status').textContent+=`\n详细开发诊断：${s.verbose_diagnostics?'开启':'关闭'} · 自动链路 ping：${s.automatic_link_probe?'开启':'关闭'}`;
+el('metrics').textContent=`TCP 代理流：${s.clients.reduce((n,c)=>n+c.tcp,0)} / ${s.tcp_flow_limit}\nUDP 代理流：${s.clients.reduce((n,c)=>n+c.udp,0)} / ${s.udp_flow_limit}\nTCP PCB：${s.tcp_pcb_live} / ${s.tcp_pcb_limit}（含上游、控制连接与 TIME_WAIT）\nTCP PCB 历史峰值：${s.tcp_pcb_peak} / 分配失败 ${s.tcp_pcb_failures}\n驱动发送错误：AP ${s.ap_tx_errors} / STA ${s.sta_tx_errors}\n包复制失败：${s.clone_failures}\nTCP 超时重传：客户端 ${s.client_rto} / 上游 ${s.upstream_rto}\nTCP 快速重传：客户端 ${s.client_fast} / 上游 ${s.upstream_fast}\nHTTP 栈历史最大使用：${s.http_stack_total-s.http_stack_min} / ${s.http_stack_total} 字节（最低剩余 ${s.http_stack_min}）\n重启原因编号：${s.reset_reason}`;
+el('trial').hidden=!s.pending;el('trialText').textContent=`剩余确认时间约 ${s.confirm_seconds} 秒。`;
+const list=el('clients');list.replaceChildren();if(!s.clients.length)list.textContent='暂无客户端';for(const c of s.clients){const row=document.createElement('div');row.className='client';const text=document.createElement('pre');text.textContent=`${c.ip} · ${c.mac} · ${c.rssi??'—'} dBm\nTCP ${c.tcp} / UDP ${c.udp} · 上传 ${mib(c.up_bytes)} / 下载 ${mib(c.down_bytes)}\n配额拒绝：TCP ${c.tcp_denied} / UDP ${c.udp_denied}`;row.append(text);const button=document.createElement('button');button.textContent='断开此设备';button.disabled=c.ip==='0.0.0.0';button.onclick=()=>{if(window.confirm(`断开 ${c.ip}？它可能自动重连。`))mutate('/api/kick',{token:c.token});};row.append(button);list.append(row);}message(s.subnet_overlap?`警告：上游 ${s.sta_ip} / ${s.sta_netmask} 与 AP ${s.ap_ip} / ${s.ap_netmask} 网段重叠，可能无法转发。请在本地 AP 配置中修改第三段数字。`:(s.pending?'新配置正在试运行，请验证联网后确认。':'状态已更新'));if(restarted){await loadConfig();for(const key of ['sta_password','ap_password','admin_password'])form.elements[key].value='';}await refreshEvents();}catch(e){if(epoch===mutationEpoch){const v=operationView();message(v.restarting?`连接暂未恢复：${e.message}。重启或口令变更期间可能出现此提示，请保持 AP 连接并查看上方操作状态。`:`读取失败：${e.message}。请确认仍连接此 AP，可点击刷新重试。`);}}finally{polling=false;updateButtons(lastStatus);}}
+async function mutate(path,payload){if(busy||operationView().blocked)return;if(!lastStatus){message('请先刷新并成功读取设备状态，再执行操作。');return;}busy=true;mutationEpoch++;const kind=payload.action||path.split('/').pop();operationFeedback.begin(kind,lastStatus,location.origin+'/',Date.now());updateButtons(lastStatus);try{const data=await api(path,payload);operationFeedback.accept(data,Date.now());if(data.reboot){for(const key of ['sta_password','ap_password','admin_password'])form.elements[key].value='';}}catch(e){operationFeedback.reject(e,Date.now());}finally{busy=false;updateButtons(lastStatus);if(!operationView().otherAddress)await refresh();}}
+el('saveInternet').onclick=()=>mutate('/api/action',{action:'internet_settings',enabled:el('internetAuto').checked,target:Number(el('internetTarget').value)});
+el('ledEnabled').onchange=()=>mutate('/api/action',{action:'led',enabled:el('ledEnabled').checked});
+for(const b of document.querySelectorAll('[data-action]'))b.onclick=()=>{
+ const action=b.dataset.action;
+ const warning=action==='reboot'?'重启设备？所有连接会断开，配置和口令保留。请重连后重新打开本页。':action==='relay_reset'?'重建代理连接？现有 TCP/UDP 流会关闭。':action==='reconnect'?'重连上游 Wi-Fi？代理流量暂时中断，本地 AP 保留。':null;
+ if(!warning||window.confirm(warning))mutate('/api/action',{action});
+};
+form.onsubmit=e=>{e.preventDefault();const data=Object.fromEntries(new FormData(form));data.sta_open=form.elements.sta_open.checked;data.socks_port=Number(data.socks_port);data.max_clients=Number(data.max_clients);data.ap_subnet=Number(data.ap_subnet);if(window.confirm(`保存并强制重启？所有连接会断开。重连后打开 http://192.168.${data.ap_subnet}.1/，在 180 秒内确认；否则恢复 192.168.${currentSubnet}.1。`))mutate('/api/config',data);};
+el('confirm').onclick=()=>mutate('/api/confirm',{});el('defaults').onclick=()=>{if(window.confirm('恢复默认配置并重启？管理密码保持不变。'))mutate('/api/defaults',{});};el('refresh').onclick=refresh;
+async function loadConfig(){const c=await api('/api/config');currentSubnet=c.ap_subnet;for(const [key,value]of Object.entries(c))if(form.elements[key])form.elements[key].value=value;}async function init(){try{await loadConfig();}catch(e){message(`配置读取失败：${e.message}`);}await refresh();}document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});setInterval(()=>{const v=showOperation();if(!v.otherAddress&&Date.now()-lastPoll>=(v.blocked?3000:10000)){lastPoll=Date.now();refresh();}},1000);let lastPoll=Date.now();updateButtons(lastStatus);init();
+</script></html>

@@ -1,0 +1,29 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>设置管理口令</title><style>body{font:16px system-ui,sans-serif;max-width:500px;margin:40px auto;padding:20px;background:#f3f5f8;color:#182335}main{padding:24px;background:white;border-radius:12px}h1{font-size:23px}p{line-height:1.7}label{display:block;margin:18px 0}input,button{font:inherit;padding:11px;border-radius:6px;border:1px solid #aebaca;box-sizing:border-box;width:100%}input{margin-top:8px}button{background:#245ac7;color:white;cursor:pointer}#message{white-space:pre-wrap;line-height:1.7}[hidden]{display:none!important}a{display:block;margin-top:15px;color:#245ac7}</style>
+<main><h1>首次设置管理口令</h1><p>设置后才能查看状态或修改配置。账号固定为 <strong>admin</strong>，口令与 Wi-Fi 密码独立。</p>
+<form id="setup"><label>管理口令<input id="password" type="password" required minlength="12" maxlength="64" autocomplete="new-password"></label><label>再次输入<input id="confirm" type="password" required minlength="12" maxlength="64" autocomplete="new-password"></label><button id="save" type="submit">设置口令</button></form>
+<p id="message" role="status"></p><a id="login" href="/" hidden>打开管理页并登录</a><p>口令需 12～64 字节，建议使用易于保存的 ASCII 字符组合。请保存好口令；<strong>RST/EN 和断电只会重启，不会清除口令。</strong></p></main>
+<script>
+'use strict';
+async function requestJSON(path,payload){
+ const method=payload===undefined?'GET':'POST';
+ const headers=payload===undefined?{}:{'Content-Type':'application/json','X-Proxy-Action':'manage'};
+ const encoded=payload===undefined?undefined:JSON.stringify(payload);
+ if(typeof AbortController!=='function')return new Promise((resolve,reject)=>{
+  const xhr=new XMLHttpRequest();xhr.open(method,path);xhr.timeout=8000;xhr.withCredentials=true;
+  for(const key of Object.keys(headers))xhr.setRequestHeader(key,headers[key]);
+  xhr.onload=()=>{try{const data=JSON.parse(xhr.responseText);if(xhr.status<200||xhr.status>=300){const error=Error(data.error||`HTTP ${xhr.status}`);error.httpStatus=xhr.status;throw error;}resolve(data);}catch(error){reject(error);}};
+  xhr.ontimeout=()=>reject(Error('请求超时（8 秒）'));xhr.onerror=()=>reject(Error('网络请求失败'));
+  xhr.send(encoded===undefined?null:encoded);
+ });
+ const controller=new AbortController();let expired=false;
+ const timer=setTimeout(()=>{expired=true;controller.abort();},8000);
+ try{
+  const response=await fetch(path,{method,headers,body:encoded,cache:'no-store',credentials:'same-origin',signal:controller.signal});
+  const data=await response.json();if(!response.ok){const error=Error(data.error||`HTTP ${response.status}`);error.httpStatus=response.status;throw error;}return data;
+ }catch(error){if(expired)throw Error('请求超时（8 秒）');throw error;}
+ finally{clearTimeout(timer);}
+}
+const el=id=>document.getElementById(id);let busy=false;
+el('setup').onsubmit=async event=>{event.preventDefault();if(busy)return;const password=el('password').value,confirmation=el('confirm').value;if(password!==confirmation){el('message').textContent='两次输入的口令不一致。';return;}const bytes=new TextEncoder().encode(password).length;if(bytes<12||bytes>64){el('message').textContent='口令需为 12～64 字节。';return;}busy=true;el('save').disabled=true;el('message').textContent='正在保存…';try{await requestJSON('/api/setup',{password,confirm:confirmation});el('password').value=el('confirm').value='';el('setup').hidden=true;el('login').hidden=false;el('message').textContent='口令已保存，无需重启。打开管理页，用账号 admin 和刚设置的口令登录。';}catch(error){el('message').textContent=`保存失败：${error.message}。若连接中断，请重新打开首页；已保存的口令不会被重置。`;busy=false;el('save').disabled=false;}};
+</script></html>

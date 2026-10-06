@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>局域网吞吐测试</title>
+<style>
+body{font:16px system-ui,sans-serif;max-width:36rem;margin:2rem auto;padding:0 1rem;background:#f5f7fa;color:#19232e}
+button{font:inherit;padding:.8rem 1.5rem;background:#145ad1;color:white;border:0;border-radius:.5rem}button:disabled{opacity:.5}
+table{width:100%;border-collapse:collapse;margin:1.5rem 0}td,th{padding:.6rem;text-align:left;border-bottom:1px solid #ccd3dc}
+small{color:#536171}#status{min-height:3rem;overflow-wrap:anywhere}
+</style>
+<h1>局域网吞吐测试</h1>
+<p>保持连接 ESP32 AP、关闭移动数据，测试时暂停其他下载和视频。</p>
+<p>每条连接下载、上传各 8 MiB，共 3 轮。4 路模式每轮每方向共 32 MiB，显示的是总吞吐。页面保持前台，结果自动保存。</p>
+<button id="start">单路测速</button>
+<button id="parallel">4 路并发测速</button>
+<p><label>终端标识：<select id="client-id"><option>A</option><option>B</option></select></label></p>
+<button id="paired">双终端同步测速（每台单路）</button>
+<p>双终端测试时，两台分别选择 A、B，再各点同步测速。每轮下载与上传会自动等待另一台就绪。</p>
+<p id="status" role="status">尚未开始</p>
+<table><thead><tr><th>轮次</th><th>下载 Mbps</th><th>上传 Mbps</th></tr></thead><tbody id="rows"></tbody></table>
+<p id="summary"></p>
+<p id="build"></p>
+<p id="report-status" role="status"></p>
+<button id="retry" hidden>重试保存结果</button>
+<small>这是局域网代理路径的应用吞吐，包含 HTTP 和校验响应开销，与公网 SpeedTest 分开比较。测试服务运行在开发主机。</small>
+<script>
+const size=8*1024*1024, button=document.getElementById('start'), parallelButton=document.getElementById('parallel'), status=document.getElementById('status');
+const firmwareLabel="__BENCH_LABEL__";
+document.getElementById('build').textContent='测试版本：'+firmwareLabel;
+function rate(bytes,elapsed){return bytes*8/elapsed/1000;}
+async function timedBatch(path,options,streams){
+ const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),120000);
+ const start=performance.now();
+ const pending=Array.from({length:streams},async()=>{
+  const streamStart=performance.now();
+  const response=await fetch(path,{...options,cache:'no-store',signal:controller.signal});
+  if(!response.ok)throw Error('HTTP '+response.status);
+  const body=await response.arrayBuffer();
+  return {body,elapsed:performance.now()-streamStart};
+ });
+ try{
+  const transfers=await Promise.all(pending);
+  return {bodies:transfers.map(t=>t.body),stream_ms:transfers.map(t=>t.elapsed),elapsed:performance.now()-start};
+ }catch(error){
+  controller.abort();
+  await Promise.allSettled(pending); // Drain peers before reporting/re-enabling.
+  throw error;
+ }finally{clearTimeout(timer);}
+}
+let lastReport;
+const clientSelect=document.getElementById('client-id'), pairedButton=document.getElementById('paired');
+clientSelect.value=localStorage.getItem('bench-client-id')==='B'?'B':'A';
+clientSelect.onchange=()=>localStorage.setItem('bench-client-id',clientSelect.value);
+async function reportResult(report){
+ lastReport=report;
+ const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),5000);
+ try{
+  const response=await fetch('/results',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(report),signal:controller.signal});
+  if(!response.ok || (await response.json()).saved!==true)throw Error('保存失败');
+  document.getElementById('report-status').textContent='结果已自动保存到开发主机，无需手动上报。';
+  document.getElementById('retry').hidden=true;
+ }catch(error){
+  document.getElementById('report-status').textContent='结果暂未保存，恢复连接后可点击重试。';
+  document.getElementById('retry').hidden=false;
+ }finally{clearTimeout(timer);}
+}
+document.getElementById('retry').onclick=()=>reportResult(lastReport);
+async function runTest(streams,paired=false){
+ button.disabled=parallelButton.disabled=pairedButton.disabled=clientSelect.disabled=true;document.getElementById('rows').replaceChildren();document.getElementById('summary').textContent='';
+ const payload=new Uint8Array(size);for(let i=0;i<size;i++)payload[i]=i&255;
+ const results=[];
+ const run_id=Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
+ const client_id=clientSelect.value; let pair_id=null;
+ async function waitPeer(stage){
+  if(!paired)return;
+  status.textContent='双终端 '+stage+'：等待另一台就绪…';
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),50000);
+  try{
+   const response=await fetch('/pair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({client_id,run_id,stage,pair_id}),signal:controller.signal});
+   if(!response.ok)throw Error('双终端同步失败：检查两台标识分别为 A、B，并都保持页面前台');
+   const ready=await response.json();pair_id=ready.pair_id;
+   await new Promise(resolve=>setTimeout(resolve,ready.wait_ms));
+  }finally{clearTimeout(timer);}
+ }
+ document.getElementById('retry').hidden=true;
+ const report=phase=>({run_id,phase,firmware_label:firmwareLabel,client_id,paired,pair_id,streams,bytes_per_transfer:size,total_bytes_per_direction:size*streams,rounds:results,visibility:document.visibilityState});
+ await reportResult(report('start'));
+ try{
+  await waitPeer('join');
+  for(let round=1;round<=3;round++){
+   await waitPeer(round+'-down');
+   status.textContent=streams+' 路，第 '+round+' 轮：下载…';
+   const download=await timedBatch('/8m',undefined,streams);
+   for(const body of download.bodies){
+    const bytes=new Uint8Array(body);
+    if(bytes.length!==size)throw Error('下载字节数不匹配：'+bytes.length);
+    // Check all streams outside the measured transfer interval.
+    for(let i=0;i<bytes.length;i++)if(bytes[i]!== (i&255))throw Error('下载内容校验失败');
+   }
+   await waitPeer(round+'-up');
+   status.textContent=streams+' 路，第 '+round+' 轮：上传…';
+   const upload=await timedBatch('/upload',{method:'PUT',body:payload},streams);
+   for(const body of upload.bodies){
+    const result=JSON.parse(new TextDecoder().decode(body));
+    if(result.bytes!==size || result.matches_8m!==true)throw Error('上传内容校验失败');
+   }
+   const down=rate(size*streams,download.elapsed), up=rate(size*streams,upload.elapsed);
+   results.push({down,up,download_ms:download.elapsed,upload_ms:upload.elapsed,download_stream_ms:download.stream_ms,upload_stream_ms:upload.stream_ms});
+   const row=document.createElement('tr');
+   for(const value of [round,down.toFixed(2),up.toFixed(2)]){const cell=document.createElement('td');cell.textContent=value;row.append(cell);}
+   document.getElementById('rows').append(row);
+   await reportResult(report('round'));
+  }
+  const median=key=>results.map(r=>r[key]).sort((a,b)=>a-b)[1].toFixed(2);
+  document.getElementById('summary').textContent=streams+' 路总吞吐中位数：下载 '+median('down')+' Mbps，上传 '+median('up')+' Mbps';
+  status.textContent='3 轮完成，下载与上传内容均已校验。';
+  await waitPeer('done');
+  status.textContent='3 轮完成，下载与上传内容均已校验。';
+  await reportResult({...report('complete'),median_down:Number(median('down')),median_up:Number(median('up'))});
+ }catch(error){status.textContent='测试未完成：'+error.message;await reportResult({...report('error'),error:error.message});}
+ finally{button.disabled=parallelButton.disabled=pairedButton.disabled=clientSelect.disabled=false;}
+}
+button.onclick=()=>runTest(1);
+parallelButton.onclick=()=>runTest(4);
+pairedButton.onclick=()=>runTest(1,true);
+</script>
+</html>

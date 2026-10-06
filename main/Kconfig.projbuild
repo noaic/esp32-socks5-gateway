@@ -1,0 +1,68 @@
+menu "Transparent gateway Wi-Fi"
+    config PROXY_STA_SSID
+        string "Upstream Wi-Fi SSID (empty disables connection attempts)"
+        default ""
+    config PROXY_STA_PASSWORD
+        string "Upstream Wi-Fi password (empty for open network)"
+        default ""
+    config PROXY_AP_SSID
+        string "SoftAP SSID"
+        default "ESP32-Transparent-Proxy"
+    config PROXY_AP_PASSWORD
+        string "SoftAP WPA2 password (8..63 characters)"
+        default "esp32proxy"
+    config PROXY_AP_CHANNEL
+        int "Initial SoftAP channel (STA channel takes priority)"
+        range 1 11
+        default 6
+endmenu
+
+menu "Temporary gateway diagnostics"
+    config PROXY_VERBOSE_DIAGNOSTICS
+        bool "Enable periodic detailed UART statistics and CPU samples"
+        default n
+        help
+            Development only: detailed ten-second reports, stalled-flow PCB
+            tracing and CPU snapshots. Web counters, events, errors and manual
+            connection diagnostics remain available when disabled.
+    config PROXY_LINK_PROBE
+        bool "Probe AP client and STA router when tracing stalled flows"
+        depends on PROXY_VERBOSE_DIAGNOSTICS
+        default n
+        help
+            Development only: adds a 3072-byte-stack worker and temporary
+            ping sessions. Targets only the AP client and local STA gateway.
+            This does not control the Web manual SOCKS5/DNS diagnostic.
+    config PROXY_PIPELINE_DIAG
+        bool "Sample benchmark select waits and TCP windows"
+        depends on PROXY_TCP_SOCKS5
+        default n
+        help
+            Read-only, bounded samples for 192.168.1.10:18080 traffic.
+            No new task, socket option, TCP state mutation, or radio tuning.
+    config PROXY_LINK_BENCH
+        bool "Enable AP-local browser throughput endpoint (development only)"
+        default n
+        help
+            Adds one fixed HTTP server task and 24 KiB PSRAM test storage.
+            Listens on the AP interface at port 18081. Logs results over UART.
+            Disable after diagnosing the separate AP and upstream paths.
+endmenu
+
+menu "Transparent TCP gateway"
+    config PROXY_POC_ENABLE
+        bool "Enable transparent IPv4 hooks"
+        default y
+    config PROXY_TCP_SOCKS5
+        bool "Forward TCP through SOCKS5 (disable for Phase 2 echo)"
+        default y
+        depends on PROXY_POC_ENABLE
+    config PROXY_UDP_ENABLE
+        bool "Enable IPv4 SOCKS5 UDP ASSOCIATE"
+        default y
+        depends on PROXY_TCP_SOCKS5
+    config PROXY_POC_TEST_IP
+        string "Test destination IPv4 (only this IP is redirected)"
+        default "198.51.100.7"
+        depends on PROXY_POC_ENABLE
+endmenu

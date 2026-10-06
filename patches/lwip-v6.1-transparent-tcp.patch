@@ -1,0 +1,51 @@
+--- a/lwip/src/core/ipv4/ip4.c
++++ b/lwip/src/core/ipv4/ip4.c
+@@ -60,6 +60,13 @@
+ 
+ #include <string.h>
+ 
++/* Project-owned IPv4 transparent TCP hooks (Phase 2, no NAPT). */
++#if CONFIG_PROXY_POC_ENABLE
++extern err_t proxy_rewrite_ip4_input(struct pbuf **packet, struct netif *inp);
++extern int proxy_rewrite_ip4_output(struct pbuf *packet, struct netif *out,
++                                  const ip4_addr_t *dest, err_t *result);
++#endif
++
+ #ifdef LWIP_HOOK_FILENAME
+ #include LWIP_HOOK_FILENAME
+ #endif
+@@ -583,6 +590,15 @@
+     ip_napt_recv(p, iphdr);
+ #endif
+ #endif /* ESP_LWIP */
++
++#if CONFIG_PROXY_POC_ENABLE
++  /* After IPv4 validation, before local-address acceptance; fragments rejected by hook. */
++  if (proxy_rewrite_ip4_input(&p, inp) != ERR_OK) {
++    pbuf_free(p);
++    return ERR_OK;
++  }
++  iphdr = (void *)p->payload; /* hook can replace p with a privately writable clone */
++#endif
+ 
+   /* copy IP addresses to aligned ip_addr_t */
+   ip_addr_copy_from_ip4(ip_data.current_iphdr_dest, iphdr->dest);
+@@ -1052,6 +1068,18 @@
+     dest = &dest_addr;
+   }
+ 
++#if CONFIG_PROXY_POC_ENABLE
++  /* IPv4 header/checksum ready, before fragmentation and netif output.
++   * Matching packets are emitted from a clone; original TCP retransmit pbuf is untouched. */
++  {
++    err_t proxy_result;
++    if (proxy_rewrite_ip4_output(p, netif, dest, &proxy_result)) {
++      IP_STATS_INC(ip.xmit);
++      return proxy_result;
++    }
++  }
++#endif
++
+   IP_STATS_INC(ip.xmit);
+ 
+   LWIP_DEBUGF(IP_DEBUG, ("ip4_output_if: %c%c%"U16_F"\n", netif->name[0], netif->name[1], (u16_t)netif->num));

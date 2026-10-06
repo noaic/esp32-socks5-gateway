@@ -1,0 +1,5 @@
+{
+  "type": "field",
+  "inboundTag": ["esp32-dns-upstream"],
+  "outboundTag": "proxy"
+}

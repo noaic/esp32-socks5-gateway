@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>局域网吞吐测试</title>
+<style>
+body{font:16px system-ui,sans-serif;max-width:36rem;margin:2rem auto;padding:0 1rem;background:#f5f7fa;color:#19232e}
+button{font:inherit;padding:.8rem 1.5rem;background:#145ad1;color:white;border:0;border-radius:.5rem}button:disabled{opacity:.5}
+table{width:100%;border-collapse:collapse;margin:1.5rem 0}td,th{padding:.6rem;text-align:left;border-bottom:1px solid #ccd3dc}
+small{color:#536171}#status{min-height:3rem;overflow-wrap:anywhere}
+</style>
+<h1>ESP32 AP 本地测速</h1>
+<p>保持连接 ESP32 AP、关闭移动数据，测试时暂停其他下载和视频。</p>
+<p>单路下载、上传各 8 MiB，共 3 轮。流量只经过 Android 和 ESP32，不经过上游 Wi-Fi 或代理。保持页面前台。</p>
+<button id="start">单路测速</button>
+<button id="sta">上游链路测速</button>
+<button id="parallel" hidden>4 路并发测速</button>
+<p id="status" role="status">尚未开始</p>
+<table><thead><tr><th>轮次</th><th>下载 Mbps</th><th>上传 Mbps</th></tr></thead><tbody id="rows"></tbody></table>
+<p id="summary"></p>
+<p id="build"></p>
+<p id="report-status" role="status"></p>
+<p><a href="http://192.168.1.10:18080/bench">下一步：完整代理路径单路测速</a></p>
+<button id="retry" hidden>重试保存结果</button>
+<small>“单路测速”测 Android ↔ ESP32 AP；“上游链路测速”由 ESP32 自行通过 STA＋现有 SOCKS 访问开发主机，不经过 AP 传输大数据。两者都包含内容校验开销。上游测试不是纯 STA 或 VPS 出口测速。</small>
+<script>
+const size=8*1024*1024, button=document.getElementById('start'), parallelButton=document.getElementById('parallel'), status=document.getElementById('status');
+const firmwareLabel="diag35-ap-local";
+document.getElementById('build').textContent='测试版本：diag36-link-endpoints';
+const staButton=document.getElementById('sta');
+function rate(bytes,elapsed){return bytes*8/elapsed/1000;}
+async function timedBatch(path,options,streams){
+ const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),120000);
+ const start=performance.now();
+ const pending=Array.from({length:streams},async()=>{
+  const streamStart=performance.now();
+  const response=await fetch(path,{...options,cache:'no-store',signal:controller.signal});
+  if(!response.ok)throw Error('HTTP '+response.status);
+  const body=await response.arrayBuffer();
+  return {body,elapsed:performance.now()-streamStart};
+ });
+ try{
+  const transfers=await Promise.all(pending);
+  return {bodies:transfers.map(t=>t.body),stream_ms:transfers.map(t=>t.elapsed),elapsed:performance.now()-start};
+ }catch(error){
+  controller.abort();
+  await Promise.allSettled(pending); // Drain peers before reporting/re-enabling.
+  throw error;
+ }finally{clearTimeout(timer);}
+}
+let lastReport;
+async function reportResult(report){
+ lastReport=report;
+ const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),5000);
+ try{
+  const response=await fetch('/results',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(report),signal:controller.signal});
+  if(!response.ok || (await response.json()).saved!==true)throw Error('保存失败');
+  document.getElementById('report-status').textContent='结果已写入串口日志，无需抄数字。';
+  document.getElementById('retry').hidden=true;
+ }catch(error){
+  document.getElementById('report-status').textContent='结果暂未保存，恢复连接后可点击重试。';
+  document.getElementById('retry').hidden=false;
+ }finally{clearTimeout(timer);}
+}
+document.getElementById('retry').onclick=()=>reportResult(lastReport);
+async function runTest(streams){
+ button.disabled=parallelButton.disabled=staButton.disabled=true;document.getElementById('rows').replaceChildren();document.getElementById('summary').textContent='';
+ const payload=new Uint8Array(size);for(let i=0;i<size;i++)payload[i]=i&255;
+ const results=[];
+ const run_id=Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
+ document.getElementById('retry').hidden=true;
+ const report=phase=>({run_id,phase,firmware_label:firmwareLabel,streams,bytes_per_transfer:size,total_bytes_per_direction:size*streams,rounds:results,visibility:document.visibilityState});
+ await reportResult(report('start'));
+ try{
+  for(let round=1;round<=3;round++){
+   status.textContent=streams+' 路，第 '+round+' 轮：下载…';
+   const download=await timedBatch('/8m',undefined,streams);
+   for(const body of download.bodies){
+    const bytes=new Uint8Array(body);
+    if(bytes.length!==size)throw Error('下载字节数不匹配：'+bytes.length);
+    // Check all streams outside the measured transfer interval.
+    for(let i=0;i<bytes.length;i++)if(bytes[i]!== (i&255))throw Error('下载内容校验失败');
+   }
+   status.textContent=streams+' 路，第 '+round+' 轮：上传…';
+   const upload=await timedBatch('/upload',{method:'PUT',body:payload},streams);
+   for(const body of upload.bodies){
+    const result=JSON.parse(new TextDecoder().decode(body));
+    if(result.bytes!==size || result.matches_8m!==true)throw Error('上传内容校验失败');
+   }
+   const down=rate(size*streams,download.elapsed), up=rate(size*streams,upload.elapsed);
+   results.push({down,up,download_ms:download.elapsed,upload_ms:upload.elapsed,download_stream_ms:download.stream_ms,upload_stream_ms:upload.stream_ms});
+   const row=document.createElement('tr');
+   for(const value of [round,down.toFixed(2),up.toFixed(2)]){const cell=document.createElement('td');cell.textContent=value;row.append(cell);}
+   document.getElementById('rows').append(row);
+   await reportResult(report('round'));
+  }
+  const median=key=>results.map(r=>r[key]).sort((a,b)=>a-b)[1].toFixed(2);
+  document.getElementById('summary').textContent=streams+' 路总吞吐中位数：下载 '+median('down')+' Mbps，上传 '+median('up')+' Mbps';
+  status.textContent='3 轮完成，下载与上传内容均已校验。';
+  await reportResult({...report('complete'),median_down:Number(median('down')),median_up:Number(median('up'))});
+ }catch(error){status.textContent='测试未完成：'+error.message;await reportResult({...report('error'),error:error.message});}
+ finally{button.disabled=parallelButton.disabled=staButton.disabled=false;}
+}
+button.onclick=()=>runTest(1);
+parallelButton.onclick=()=>runTest(4);
+staButton.onclick=async()=>{
+ button.disabled=parallelButton.disabled=staButton.disabled=true;
+ document.getElementById('rows').replaceChildren();document.getElementById('summary').textContent='';
+ document.getElementById('retry').hidden=true;
+ status.textContent='ESP32 正在测试上游链路，共 3 轮。保持页面前台，暂停其他联网操作…';
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),400000);
+ try{
+  const response=await fetch('/sta-bench',{method:'POST',signal:controller.signal,cache:'no-store'});
+  if(!response.ok)throw Error('HTTP '+response.status);
+  const result=await response.json();
+  if(result.phase!=='complete')throw Error(result.error || '上游测速失败');
+  for(let i=0;i<result.rounds.length;i++){
+   const row=document.createElement('tr');
+   for(const value of [i+1,result.rounds[i].down.toFixed(2),result.rounds[i].up.toFixed(2)]){
+    const cell=document.createElement('td');cell.textContent=value;row.append(cell);
+   }
+   document.getElementById('rows').append(row);
+  }
+  document.getElementById('summary').textContent='STA＋SOCKS 端点中位数：下载 '+result.median_down.toFixed(2)+' Mbps，上传 '+result.median_up.toFixed(2)+' Mbps';
+  status.textContent='上游 3 轮完成，内容校验通过。';
+  document.getElementById('report-status').textContent='结果已写入串口日志，无需抄数字。';
+ }catch(error){status.textContent='上游测试未完成：'+error.message;}
+ finally{clearTimeout(timer);button.disabled=parallelButton.disabled=staButton.disabled=false;}
+};
+</script>
+</html>

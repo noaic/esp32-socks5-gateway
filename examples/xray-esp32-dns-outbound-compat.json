@@ -1,0 +1,7 @@
+{
+  "tag": "esp32-dns",
+  "protocol": "dns",
+  "settings": {
+    "nonIPQuery": "skip"
+  }
+}

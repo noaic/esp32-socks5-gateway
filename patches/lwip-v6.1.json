@@ -1,0 +1,7 @@
+{
+  "idf_commit": "fff9895c82d744c7237be8847347bdd1b07c6643",
+  "lwip_commit": "c6f2f878e7b0f86033214b85547d579be43351e3",
+  "file": "lwip/src/core/ipv4/ip4.c",
+  "original_sha256": "72e0d201e2ab2bf18f48a50d5bbccc19a79137488514b1ec7b3c467e6d96d677",
+  "patched_sha256": "410188f50ca79c81a8ba4f396bbef9f15cb0c0cf16a08e2d8623234f88a07267"
+}

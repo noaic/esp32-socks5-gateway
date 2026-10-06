@@ -1,0 +1,15 @@
+{
+  "tag": "esp32-dns",
+  "protocol": "dns",
+  "settings": {
+    "rules": [
+      {
+        "action": "hijack",
+        "qType": "1,28"
+      },
+      {
+        "action": "direct"
+      }
+    ]
+  }
+}
