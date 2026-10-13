@@ -2,148 +2,388 @@
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md)
 
-An **ESP32-S3 IPv4 transparent SOCKS5 gateway**. Connect a device to the ESP32 Wi-Fi AP and send its TCP/UDP traffic through an upstream SOCKS5 server without configuring a proxy on the device.
+Turn an **ESP32-S3** into a small Wi-Fi gateway. A phone or computer connects to the Wi-Fi network created by the ESP32, and the gateway forwards its IPv4 TCP/UDP traffic through **a SOCKS5 server you provide**. Applications on the client do not need individual proxy settings.
 
-A personal experimental project, based on the tested **web51** firmware. Two Android clients, forwarding, Web management, configuration rollback and serial recovery have been tested. Addresses in this repository are examples; personal Wi-Fi credentials, NVS contents and local build artifacts are excluded.
+For example, you already run a SOCKS5 service on a computer at home and want two phones to use it. The ESP32 connects to your existing Wi-Fi, creates another Wi-Fi network for the phones, and forwards their traffic to that service.
 
-## Features and scope
+This is an experimental project for learning ESP32 networking and small-scale use. The default hardware configuration targets **ESP32-S3 N16R8**, with up to two clients. You still need an existing Wi-Fi network and a working SOCKS5 service.
 
-- IPv4 Wi-Fi AP+STA; up to **two AP clients**, using DHCP.
-- Transparent TCP via SOCKS5 CONNECT and UDP via UDP ASSOCIATE; SOCKS5 v5 **NO AUTH**.
-- Fixed event loops rather than one task per connection. lwIP owns TCP handshakes, ACKs, sequence numbers, retransmission, windows and connection shutdown.
-- Independent flow metadata: **64 active TCP relays**, **512 TCP mappings** including closing protection, and **32 UDP flows**.
-- AP-local Web management: first-use password setup, status, per-client counters, configuration, events, diagnostics and maintenance actions.
-- Configuration changes restart the device and require confirmation within **180 seconds**; otherwise the previous configuration is restored.
-- A persistent on/off setting for the GPIO48 WS2812 status LED.
-- English UART commands and one-use confirmation for password/network recovery.
+## Reading guide
 
-IPv6, HTTP upstream proxying, username/password SOCKS authentication, BLE, OTA, VLESS/REALITY, local GeoIP/GeoSite routing and NTP are outside the current scope. SOCKS UDP packets with `FRAG != 0` are dropped. Broadcast, multicast and special P2P behavior are not supported. Client admission limits do not guarantee equal bandwidth.
+- [Understand the connection](#understand-the-connection)
+- [Prepare hardware and software](#prepare-hardware-and-software)
+- [Prepare the upstream SOCKS5 service](#prepare-the-upstream-socks5-service)
+- [Install the toolchain and build](#install-the-toolchain-and-build)
+- [Flash and connect for the first time](#flash-and-connect-for-the-first-time)
+- [Daily use and status LED](#daily-use-and-status-led)
+- [Troubleshooting](#troubleshooting)
+- [Serial console and recovery](#serial-console-and-recovery)
+- [Development and tests](#development-and-tests)
+- [Scope and security](#scope-and-security)
 
-## Hardware and dependencies
+For a first setup, follow this order. You can read about tests and implementation after the gateway is working.
 
-| Item | Tested configuration |
-| --- | --- |
-| Module | ESP32-S3 N16R8, dual core at 240 MHz |
-| Flash | 16 MB, DIO, 80 MHz |
-| PSRAM | 8 MB, Octal, 80 MHz, boot memory test enabled |
-| LED | One WS2812/NeoPixel on GPIO48 |
-| Console | UART, 115200 baud; choose your actual serial device |
-| ESP-IDF | v6.1, pinned revision below |
-| Toolchain | xtensa-esp32s3-elf-gcc 15.2.0 tested |
-| Components | cJSON 1.7.19 and led_strip 3.0.3; `dependencies.lock` |
-
-The lwIP patch requires these exact revisions:
-
-- ESP-IDF: `fff9895c82d744c7237be8847347bdd1b07c6643`
-- esp-lwIP: `c6f2f878e7b0f86033214b85547d579be43351e3`
-
-The preparation script checks revisions and hashes. An installation reporting “v6.1” may still use a different commit; review and rebase the patch before changing IDF versions.
-
-## Architecture
+## Understand the connection
 
 ```mermaid
 flowchart LR
-    C[IPv4 clients, max 2] --> AP[ESP32 SoftAP]
-    AP --> H[IPv4 rewrite hooks + independent flow tables]
-    H --> T[lwIP local TCP listener]
-    T --> TR[TCP event loop / SOCKS5 CONNECT]
-    H --> U[UDP event loop / UDP ASSOCIATE]
-    TR --> STA[Wi-Fi STA]
-    U --> STA
-    STA --> S[Upstream SOCKS5]
-    S --> I[Internet]
+    Client["Phone / computer<br/>Up to two clients"] -->|ESP32 Wi-Fi| ESP["ESP32-S3 gateway"]
+    ESP -->|Existing Wi-Fi| Router["Wi-Fi router"]
+    Router --> Proxy["SOCKS5 server<br/>For example, a LAN computer"]
+    Proxy --> Internet["Internet"]
 ```
 
-For TCP, the input path records the original destination and rewrites packets to a local listener. The output path restores the original remote endpoint and repairs checksums. lwIP continues to implement TCP. UDP uses bounded flows with independent SOCKS associations; unrelated client source ports are not forced to share one association.
+The ESP32 performs two Wi-Fi roles at the same time:
 
-This is a transparent proxy, not a NAT router or Linux TPROXY implementation. The patch is applied to a generated **project-local `components/lwip` override**. It never edits the global ESP-IDF installation. The repository contains the patch and preparation script, not a vendored full lwIP copy.
+| Term | Meaning in this project |
+| --- | --- |
+| AP, access point | The Wi-Fi network created by the ESP32, which your phone or computer joins |
+| STA, station | The ESP32 acting as a Wi-Fi client of your existing router |
+| Upstream | The external network or service used by the ESP32, such as your home Wi-Fi and SOCKS5 server |
+| SOCKS5 | A proxy protocol: the server opens connections and forwards data on a client's behalf |
+| Transparent proxy | The gateway handles forwarding when a client joins its Wi-Fi; each application does not need a proxy address |
 
-## Build and first use
+**This project provides the gateway firmware; you must provide the SOCKS5 service separately.** It can run on a LAN computer or another host reachable by the ESP32. It does not have to run on your router.
 
-Install the pinned ESP-IDF revision and its submodules using the [official installation guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/get-started/index.html). Activate the environment with `source "$IDF_PATH/export.sh"`, or your installation's EIM activation script.
+The management page runs on the ESP32. You can connect to its AP and configure it even before upstream Wi-Fi is set up.
 
-From the repository root:
+## Prepare hardware and software
+
+### Hardware
+
+| Item | Recommended / tested configuration | Notes |
+| --- | --- | --- |
+| Board | ESP32-S3 N16R8, dual core at 240 MHz | N16R8 means 16 MB Flash and 8 MB PSRAM; check the board specification |
+| Flash | 16 MB, DIO, 80 MHz | Stores firmware and persistent settings |
+| PSRAM | 8 MB, Octal, 80 MHz | Additional working memory; the default build tests it at startup |
+| USB cable | A cable that carries data | A charging-only cable cannot flash firmware or provide a serial console |
+| Status LED | One WS2812 / NeoPixel on GPIO48 | A board with a different LED pin does not match this configuration; LED output can be disabled on the management page |
+| Wi-Fi router | An available 2.4 GHz network | ESP32-S3 cannot join a network that only provides 5 GHz |
+| Test client | One phone or computer | Get one client working before adding the second |
+
+A different ESP32 chip, Flash/PSRAM size, or LED pin may require hardware configuration changes. For a first setup, use the configuration above rather than flashing the default firmware onto an arbitrary ESP32 board.
+
+### Software
+
+- **ESP-IDF**, Espressif's tools for building and flashing firmware. This project requires the exact revision listed below.
+- **Git and Python 3.10 or newer**, plus the system dependencies in the ESP-IDF installation guide.
+- A **SOCKS5 service** supporting IPv4, no authentication, and UDP forwarding.
+- A browser for management. The current firmware's Web interface is in Chinese; serial commands are in English. This guide includes Chinese button labels where needed.
+- Linux GCC/binutils for host regression tests, and Node.js for frontend tests. Node.js is not required to build the firmware.
+
+The ESP-IDF installer downloads the matching GCC `15.2.0` cross-compiler to generate ESP32 firmware; host tests use your computer's system GCC instead. The firmware components cJSON `1.7.19` and led_strip `3.0.3` are recorded in `dependencies.lock` and downloaded automatically on the first build.
+
+## Prepare the upstream SOCKS5 service
+
+Check that the proxy is reachable **from the ESP32's network**. A proxy working on its own computer does not necessarily accept connections from other devices.
+
+| Requirement | Explanation |
+| --- | --- |
+| A SOCKS5 listening port | An HTTP proxy port cannot replace a SOCKS5 port |
+| NO AUTH support | The firmware does not support SOCKS5 username/password authentication |
+| UDP ASSOCIATE support | Ordinary DNS queries and other UDP traffic depend on it; working TCP alone does not verify the whole gateway |
+| An address reachable from the LAN | A service bound only to `127.0.0.1` cannot be reached by other devices; enable LAN access using your proxy software's instructions |
+| Appropriate firewall access | Allow the TCP control connection and the UDP relay address/port returned by the server; the UDP port may differ from the SOCKS5 listening port |
+
+Example network settings:
+
+| Purpose | Example value |
+| --- | --- |
+| Existing Wi-Fi name | `Home-WiFi` |
+| Router address | `192.168.1.1` |
+| Computer running SOCKS5 | `192.168.1.2` |
+| SOCKS5 port | `7897` |
+| ESP32 AP / management address | `192.168.4.1` |
+| DNS address advertised by DHCP | `1.1.1.1` |
+
+Replace these examples with your network's actual settings. The firmware default `192.168.1.2:7897` does not establish that a proxy exists there. Do not enter your computer's `127.0.0.1` as the server address: to the ESP32, that address refers to the ESP32 itself.
+
+For Xray, see the [SOCKS settings example](examples/xray-socks-settings.json) and the DNS examples in `examples/`. They are fragments to integrate into your own complete Xray configuration. Other proxy software can work if it meets the requirements above. Keep an unauthenticated proxy accessible only to trusted networks.
+
+## Install the toolchain and build
+
+The commands below use **Bash on Linux, macOS, or WSL**. For native Windows, follow the [official ESP-IDF getting-started guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/get-started/index.html) and use the installer's development terminal or EIM activation script. In that terminal, use `python` in place of `python3` if needed.
+
+WSL can build the firmware, but USB devices do not necessarily appear in WSL automatically. Before flashing, attach/forward USB using your system's supported method, or use a Windows ESP-IDF development terminal.
+
+### 1. Install the matching ESP-IDF revision
+
+Transparent forwarding uses a small lwIP patch. lwIP is the TCP/IP networking library inside ESP-IDF. The patch depends on its source code, so a version string of “v6.1” alone is insufficient; these commits must match:
+
+| Dependency | Exact commit |
+| --- | --- |
+| ESP-IDF v6.1 | `fff9895c82d744c7237be8847347bdd1b07c6643` |
+| esp-lwIP | `c6f2f878e7b0f86033214b85547d579be43351e3` |
+
+Install the system prerequisites from the official guide first. Then use a **new directory that does not already exist**. This example uses a separate `esp-idf-gateway` directory so you can keep another ESP-IDF installation.
 
 ```bash
+mkdir -p ~/esp
+cd ~/esp
+
+git clone --no-checkout --depth 1 https://github.com/espressif/esp-idf.git esp-idf-gateway
+cd esp-idf-gateway
+git fetch --depth 1 origin fff9895c82d744c7237be8847347bdd1b07c6643
+git checkout --detach fff9895c82d744c7237be8847347bdd1b07c6643
+git submodule update --init --recursive --depth 1
+
+./install.sh esp32s3
+python3 tools/idf_tools.py install cmake ninja
+source ./export.sh
+```
+
+The submodule command downloads supporting source code, including the matching lwIP revision. Installation also downloads compilers and Python dependencies. Wait for each command to finish successfully before continuing.
+
+If both exact commits are already installed, activate that installation instead. **Activate the environment again in each new terminal.** For the example directory:
+
+```bash
+source ~/esp/esp-idf-gateway/export.sh
+idf.py --version
+git -C "$IDF_PATH" rev-parse HEAD
+```
+
+The final command should print the ESP-IDF commit in the table. EIM users should use their installation's generated activation script and check the commit too.
+
+### 2. Get the project and prepare lwIP
+
+```bash
+git clone https://github.com/noaic/esp32-socks5-gateway.git ~/esp32-socks5-gateway
+cd ~/esp32-socks5-gateway
 python3 tools/prepare_lwip.py apply
+python3 tools/prepare_lwip.py check
+```
+
+If you already have the project, enter that checkout rather than cloning again. All subsequent project commands run from the **project root, containing `CMakeLists.txt`**.
+
+The preparation script checks commits and source hashes, then applies the patch to a generated, project-local `components/lwip` directory. It does not edit the global ESP-IDF installation. If a revision or hash does not match, check the toolchain instead of forcing the patch.
+
+### 3. Configure and build
+
+```bash
 idf.py menuconfig
+```
+
+Open `Transparent gateway Wi-Fi`:
+
+- For a first setup, you can leave the upstream `SSID` empty and configure it later on the management page. The AP starts, but the ESP32 does not attempt to join upstream Wi-Fi yet.
+- Change `SoftAP WPA2 password` to your own AP password, using 8–63 ASCII characters.
+- You can keep the AP name `ESP32-Transparent-Proxy`.
+- Keep other hardware/network defaults initially. Normal use does not require `Temporary gateway diagnostics`.
+
+Save, exit the menu, and run:
+
+```bash
 idf.py build
 idf.py size
 ```
 
-Under **Transparent gateway Wi-Fi**, set the upstream Wi-Fi SSID/password and change the development AP password. With an empty STA SSID, the AP starts but the STA does not attempt to connect. `sdkconfig.defaults` fixes the hardware and baseline tuning; it does not override an existing `sdkconfig`.
+`build` generates firmware; `size` reports its memory footprint and does not flash the board. The first build downloads components and takes longer than subsequent builds.
 
-Flash only when ready, using your actual port:
+`sdkconfig.defaults` supplies initial ESP32-S3, Flash, PSRAM, and feature settings. It does not overwrite an existing `sdkconfig`, so check the board settings when reusing an older project configuration.
+
+## Flash and connect for the first time
+
+### 1. Write the firmware to the board
+
+Connect the board with a data cable and identify its actual serial port. Common examples are `/dev/ttyACM0` or `/dev/ttyUSB0` on Linux, `/dev/cu.*` on macOS, and `COM5` on Windows. These names are not fixed.
+
+From the project terminal with ESP-IDF activated, run, for example:
 
 ```bash
 idf.py -p /dev/ttyACM0 flash monitor
 ```
 
-1. Connect to `ESP32-Transparent-Proxy`. Its development AP password is `esp32proxy`; change it before normal use.
-2. Open **http://192.168.4.1/** and set your own management password on first use.
-3. Enter the real upstream SOCKS5 IPv4 address and port. The default `192.168.1.2:7897` is an example. The server must permit LAN access, NO AUTH and UDP ASSOCIATE.
-4. Save, reconnect to the AP, and confirm within 180 seconds. Check DNS, ordinary browsing and connection diagnostics.
-
-Upstream Wi-Fi can also be configured in the Web page. The Web password and AP Wi-Fi password are separate. Stored NVS configuration takes precedence over compiled defaults; ordinary application flashing does not replace it.
-
-The AP subnet is configurable as `192.168.X.1/24`. Change it when it overlaps the upstream subnet. Saving restarts the device; use the new management address and confirm before the trial expires. DHCP defaults to DNS `1.1.1.1`. The ESP32 does not run a local DNS server; client DNS UDP travels through SOCKS5 like other UDP traffic.
-
-## Status and recovery
-
-LED colors: red = STA not ready; blue = AP only; purple = AP+STA ready with unknown/stale Internet result; green = recent SOCKS-routed DNS/HTTP check passed; yellow = subnet conflict or repeated check failure. Green describes the check target, not universal Internet availability. Automatic checks normally run every five minutes and can be disabled. Check failures do not trigger automatic device restarts.
+A Windows development terminal uses a port such as:
 
 ```text
-help
-status
-events
-log info
-log warn
-log off
-reset-admin
-reset-network
-confirm CODE
-cancel
+idf.py -p COM5 flash monitor
 ```
 
-- `reset-admin` clears the management password, keeps the current network, cancels a configuration trial and restarts into first-use password setup.
-- `reset-network` keeps the current management password, restores compiled network defaults, cancels the trial and restarts at `192.168.4.1`.
-- Each recovery request displays its effects and a one-use code valid for 30 seconds. Use that device-generated code, not the literal `CODE` above.
-- RST/EN restarts the board; it does not clear credentials or network settings. BOOT is not a recovery-menu button.
+`flash` writes the firmware, and `monitor` opens logs at **115200 baud**. Press `Ctrl+]` to exit ESP-IDF monitor. Flashing, monitoring, and other serial tools must not use the same device simultaneously.
 
-Do not let flashing, monitoring and capture tools own the same UART concurrently. `tools/uart_capture.py --no-reset --interactive --timestamps` can read logs and send commands through one connection. See [maintenance and recovery](docs/maintenance.md).
+### 2. Join the ESP32 Wi-Fi network
 
-## Tests and measured performance
+Connect your phone or computer to `ESP32-Transparent-Proxy`, using the AP password you chose in `menuconfig`. The unchanged development default is `esp32proxy`; replace it before normal use.
 
-There are **75 host regression tests** for forwarding, flow/client isolation, configuration, NVS transactions and serial recovery guards, plus frontend feedback/compatibility tests. Run an IDF build first to obtain the pinned cJSON component. On Linux, use host GCC/binutils and a Python environment containing pyserial/esptool:
+Without upstream settings, a phone may say this Wi-Fi has no Internet access. Choose to stay connected so you can open the local management page. During the first test, temporarily disabling mobile data or automatic network switching helps confirm that traffic is actually going through the ESP32.
+
+### 3. Set the management password
+
+Enter **http://192.168.4.1/** in the browser address bar. Use `http://` explicitly; the management page does not provide HTTPS.
+
+On first access, set a management password. The username is always **`admin`**. The password must be **12–64 bytes**; ASCII characters make the length easier to judge. After saving, open the management page and log in with `admin` and your new password.
+
+Three different passwords serve three different purposes:
+
+| Password | Used by | Set through |
+| --- | --- | --- |
+| Upstream Wi-Fi password | ESP32 joining your existing router | Management page or `menuconfig` |
+| AP Wi-Fi password | Phone/computer joining the ESP32 | Management page or `menuconfig` |
+| Management password | Logging in to the ESP32 page as `admin` | First-use page, then management settings |
+
+The SOCKS5 server uses NO AUTH, so there are no SOCKS5 username/password fields.
+
+### 4. Enter network and proxy settings
+
+In “网关配置” (gateway configuration), enter:
+
+| Page field | What to enter |
+| --- | --- |
+| 上游 Wi-Fi SSID / 密码 | Your existing 2.4 GHz Wi-Fi name and password |
+| SOCKS5 IPv4 | The server's IPv4 address reachable by the ESP32, such as `192.168.1.2` |
+| SOCKS5 端口 | Its actual SOCKS5 listening port, such as `7897` |
+| AP 名称 / 密码 | Name/password of the Wi-Fi created by the ESP32 |
+| 最大接入数 | Maximum clients: 1 or 2 |
+| DHCP 下发的 DNS IPv4 | DNS server for clients, such as `1.1.1.1` |
+| AP 网段第三段 X | Third part of the AP address: default 4 gives `192.168.4.1` |
+
+**An empty password field preserves the existing password.** It does not clear it. For an upstream Wi-Fi network without a password, select “上游 Wi-Fi 无密码”. SSID/password lengths use UTF-8 bytes; non-ASCII characters can take multiple bytes.
+
+Upstream and AP networks must not overlap. For a typical `255.255.255.0` network, upstream `192.168.1.x` and AP `192.168.4.x` are separate. If upstream also uses `192.168.4.x`, you could change X to 10 and use `192.168.10.1` for management. The page detects conflicts using the actual network masks.
+
+### 5. Save, reconnect, and confirm
+
+Click “保存并重启” (save and restart). Losing the current connection is expected. The new configuration is tried first: **after restart, click “确认保留配置” (confirm configuration) within 180 seconds**, or the device restores the previous settings.
+
+```mermaid
+flowchart TD
+    Save["Save and restart"] --> Reconnect["Rejoin ESP32 Wi-Fi<br/>Open the current management address"]
+    Reconnect --> Test["Test connectivity and log in"]
+    Test --> Decision{"Confirmed within 180 seconds?"}
+    Decision -->|Yes| Keep["Keep the new settings"]
+    Decision -->|No| Rollback["Restore previous settings<br/>Rejoin the old AP and use the old address"]
+```
+
+Use the new AP name/password if changed, the new management address if X changed, and the new management password if changed. If a client retains its old IP address, disconnect and reconnect Wi-Fi to obtain a new DHCP lease.
+
+Before confirming, check that STA has an IPv4 address, run “运行连接诊断” (connection diagnostics), and try an ordinary webpage. After confirmation, use “立即检查互联网” (check Internet now) for an additional check. Automatic Internet checks wait until network settings are confirmed. A single LED color or an “accepted” operation message is insufficient to establish successful connectivity.
+
+## Daily use and status LED
+
+The management page shows runtime status, connected clients, per-client proxy traffic, and recent events. You can reconnect upstream Wi-Fi, close existing proxy connections, or restart the board. These actions can interrupt downloads/video; check the result and avoid repeatedly submitting an action.
+
+| Color | Meaning | Next step |
+| --- | --- | --- |
+| Blue | Upstream Wi-Fi has not been configured | Enter its SSID/password |
+| Red | Upstream is configured, but STA is not ready | Check 2.4 GHz Wi-Fi, password, and signal |
+| Purple | AP+STA ready, but an Internet result is unconfirmed, being checked, or expired | Inspect diagnostics and test a real webpage |
+| Green | A recent DNS/HTTP check through SOCKS5 passed | The check target was recently reachable; other sites may still fail |
+| Yellow | Subnet conflict or repeated failures for the check target | Inspect the conflict warning and failing diagnostic step |
+
+A successful result remains valid for 10 minutes. Normal automatic checks run every 5 minutes, with retry backoff after failures. Check failures do not automatically restart the board. Automatic checks and LED output can be disabled; those preferences are saved.
+
+**Connection diagnostics** checks the upstream TCP port, SOCKS5 NO AUTH handshake, and UDP DNS round trip. **Internet check** additionally connects to a selected HTTP target through the proxy. Interpret both alongside actual application behavior.
+
+## Troubleshooting
+
+Check from the nearest component outward: **client → ESP32 AP → upstream Wi-Fi → SOCKS5 → DNS / destination site**. Get one client working before adding a second.
+
+| Symptom | Check first |
+| --- | --- |
+| `idf.py` not found | Activate ESP-IDF in this terminal, then enter the project directory |
+| lwIP revision/hash mismatch | Correct `$IDF_PATH` commit and complete submodules; do not force the patch |
+| Component download fails during build | Read the first download error; check access to GitHub, Espressif downloads, and the component registry; keep TLS/hash verification enabled |
+| Serial port missing or flashing fails | Data cable, board USB connector, driver, port permissions, WSL USB attachment, and other programs using the port |
+| Startup reports a PSRAM error | Board really matches N16R8/Octal PSRAM settings and has stable power |
+| Phone reports no Internet | Stay connected during initial setup; afterward check STA and proxy. Prevent mobile-data switching while testing |
+| Management page does not open | Joined the ESP32 AP, explicit `http://`, current address after an X change, and a fresh DHCP lease |
+| Management login fails | Username is `admin`; management password is separate from the AP password; use the current password after changes |
+| STA never becomes ready | SSID/password, 2.4 GHz availability, signal; empty SSID disables connection attempts |
+| Upstream TCP port check fails | SOCKS5 IP/port, LAN access, firewall; do not use `127.0.0.1` |
+| TCP port works but NO AUTH fails | An HTTP port was entered, or the proxy requires credentials |
+| Some pages work but DNS/UDP fails | UDP ASSOCIATE support, reachable relay address/UDP port returned by the server, and DNS configuration |
+| Settings revert after saving | Confirmation within 180 seconds; after rollback, use the previous AP settings/address |
+| `menuconfig` changes do not affect the board's network | Stored NVS settings take precedence; change them on the page or restore compiled defaults as described below |
+| A third client cannot join | Maximum is two, configurable to one; disconnect another device first |
+
+Use serial recovery if you forget the management password or lose access after changing network settings. See [maintenance and recovery](docs/maintenance.md) for more detail.
+
+## Serial console and recovery
+
+Commands are in English. Enter them in ESP-IDF monitor or a serial terminal that can send text; press Enter after each command.
+
+| Command | Purpose |
+| --- | --- |
+| `help` | Show help |
+| `status` | Current network/resource state |
+| `events` | Recent events |
+| `log info` | Temporarily increase diagnostic logging |
+| `log warn` | Return to everyday WARN logging |
+| `log off` | Disable logging |
+| `reset-admin` | Request management password removal, keeping current network settings |
+| `reset-network` | Request compiled network defaults, keeping the management password |
+| `confirm CODE` | Confirm recovery; replace CODE with the code just shown by this device |
+| `cancel` | Cancel pending recovery |
+
+Neither `reset-*` command acts immediately. The board displays the effects and a **one-use code valid for 30 seconds**. Read the message, then enter `confirm` followed by that code. Do not type the literal `CODE`. Successful recovery restarts the board; both recovery operations cancel an active configuration trial.
+
+After `reset-admin`, open the page and set a new password. After `reset-network`, use the compiled AP name/password and management address `192.168.4.1`. If you entered Wi-Fi credentials in `menuconfig`, the compiled defaults contain them; “defaults” does not mean all passwords become empty.
+
+The Web “恢复默认配置” action also keeps the management password, but requires the 180-second confirmation after restarting. Serial `reset-network` uses the 30-second code above. **RST/EN and power cycling only restart the board; they do not clear saved passwords/network settings. BOOT is not a recovery-menu button.** Routine recovery does not require erasing all Flash.
+
+To capture logs and send commands through one connection, run from the project root:
 
 ```bash
-# Keep host assembler/linker ahead of cross-toolchain utilities.
-PATH=/usr/bin:/bin:$PATH python -m unittest discover -s tests
+python tools/uart_capture.py --port /dev/ttyACM0 --no-reset --interactive --timestamps --seconds 0
+```
+
+Exit other serial tools first. `--seconds 0` reads until interrupted. `--no-reset` avoids the tool's active reset, but adapter/driver behavior can still affect reset signals.
+
+## Development and tests
+
+### A simple view of the implementation
+
+Think of the ESP32 as an intermediary that receives and passes on data:
+
+- **TCP**, used by many webpage connections, provides reliable transport. The gateway remembers the client's intended destination, asks the proxy to connect using SOCKS5 `CONNECT`, and returns the response to the client.
+- **UDP**, used by ordinary DNS queries and some real-time traffic, uses `UDP ASSOCIATE` to obtain relay information. Forwarded packets carry their destination, and separate flows keep their own state.
+- **DNS** converts names into IP addresses. Default DHCP tells clients to use `1.1.1.1`. The ESP32 does not run a local DNS service; ordinary DNS UDP traffic is forwarded through SOCKS5 too.
+- **NVS** is the area of Flash used for persistent settings. That is why settings survive normal restarts and application flashing does not automatically replace existing network settings.
+
+Total capacity is 64 active TCP relays and 32 UDP flows. There are also 512 TCP mapping records for destinations and closing-state information; **this does not mean 512 simultaneous forwarded TCP connections**. lwIP handles underlying TCP behavior, such as retransmission, while fixed application loops service multiple connections.
+
+See [architecture](docs/architecture.md) for the detailed packet path and module responsibilities. You do not need to learn all internals before using the gateway.
+
+### Run the existing regression tests
+
+“Host tests” compile and execute parts of the C implementation on your development computer; no ESP32 board is needed. Build the firmware successfully once first so the pinned cJSON source exists in `managed_components/`.
+
+On Linux, in an activated ESP-IDF project terminal, make system GCC/binutils and Node.js available, then run:
+
+```bash
+# Remember the current interpreter before PATH changes select another Python.
+HOST_PYTHON="$(command -v python)"
+PATH=/usr/bin:/bin:$PATH "$HOST_PYTHON" -m unittest discover -s tests -v
 node tests/management_feedback_harness.js
 node tests/management_transport_harness.js
 ```
 
-If that PATH selects a different Python, invoke your Python environment's absolute interpreter path. Node is only needed for frontend tests, not firmware. Host tests do not substitute for Wi-Fi, power-loss or long-running hardware tests.
+The ESP-IDF Python environment includes pyserial/esptool, which the UART tests need. The current suite has **75 host regressions**, plus two frontend feedback/compatibility harnesses. Check actual counts, failures, and skips. Passing these checks does not replace Wi-Fi, power-loss, or long-running hardware tests.
 
-Historical local measurements were approximately **16/16 Mbps single-stream** and **24/21 Mbps aggregate with four streams**. A same-session mixed-load test kept client A playing 1080P without stalls while client B measured **14.41/11.83 Mbps**, compared with **14.21/11.97 Mbps** while A was idle. These are short-term results for specific devices and radio conditions, not guaranteed public-Internet throughput or fairness. See [performance and validation](docs/performance.md).
-
-The browser benchmark server in `tools/` defaults to port `18080`. Optional development diagnostics use the example peer `192.168.1.10:18080`; adapt it to your test network. These diagnostics are disabled in the normal build.
-
-## Repository layout
+### Repository layout and further reading
 
 | Path | Contents |
 | --- | --- |
-| `main/` | AP+STA, transparent forwarding, SOCKS5, Web/state/serial management |
-| `patches/` | Minimal revision-pinned lwIP patch and metadata |
-| `tools/` | Patch preparation, UART capture, benchmarks, probes, snapshot verification |
-| `tests/` | Host C/Python harnesses and JavaScript frontend tests |
-| `examples/` | Xray SOCKS/DNS snippets, not a complete server configuration |
-| `docs/` | Architecture, maintenance, performance and sanitized development history |
+| `main/` | Firmware source and embedded management pages |
+| `patches/` | lwIP patch and revision/hash metadata |
+| `tools/` | Patch preparation, UART capture, network probes, and benchmarks |
+| `tests/` | C/Python host tests and JavaScript frontend tests |
+| `examples/` | Xray configuration fragments |
+| `sdkconfig.defaults` | Initial hardware and feature defaults |
+| `dependencies.lock` | Firmware component version record |
+| `docs/` | Architecture, maintenance, performance, and development notes |
 
-Generated `sdkconfig`, Wi-Fi credentials, NVS, logs, builds, managed components and local binary snapshots are excluded. Historical addresses/MACs/paths are anonymized, and referenced local experiment artifacts are not included. This README and top-level `docs/` describe current behavior; history includes rejected experiments. The firmware Web UI currently uses Chinese; UART commands use English.
+- [Documentation index](docs/README.md)
+- [Maintenance and recovery](docs/maintenance.md)
+- [Performance and validation](docs/performance.md): historical local download measurements were about 16 Mbps for one stream and 24 Mbps total for four streams. Mbps means megabits per second, not MB/s. Devices, upstream services, and radio conditions affect results; these are not speed guarantees.
+- [Development history](docs/history/README.md): includes experiments that were later reverted. For everyday behavior, prefer this README and the top-level guides in `docs/`.
 
-## Known boundaries
+`sdkconfig`, `build/`, `managed_components/`, the local lwIP copy, and test outputs are generated. Check `git status` before committing; keep Wi-Fi passwords, personal configuration, logs, and local firmware artifacts out of the repository.
 
-Management binds to the AP interface but uses HTTP. Passwords/network settings are stored unencrypted in NVS. UART recovery assumes physical access and has no authentication. Secure boot and Flash encryption are not enabled. Perform first-use setup from a trusted device and keep the management interface off the public Internet.
+## Scope and security
 
-PSRAM does not eliminate internal-RAM requirements. Two clients share one AP+STA radio and the same flow limits. Weak signals, upstream failures, long RTTs and connection bursts can affect throughput. Flash-write power interruption, mid-session shared-Xray shutdown and long-term stability still need dedicated coverage.
+The gateway supports IPv4, SOCKS5 NO AUTH, TCP, and UDP forwarding. It does not support IPv6, HTTP upstream proxies, SOCKS5 account authentication, BLE, OTA, VLESS/REALITY, on-device GeoIP/GeoSite routing, or NTP. Fragmented SOCKS UDP packets (`FRAG != 0`) are dropped. Broadcast, multicast, and special P2P behavior are outside scope, and complete QUIC compatibility has not been verified.
+
+Two clients share one 2.4 GHz radio and total forwarding capacity. Client limits do not guarantee equal bandwidth. This project is unsuitable as a replacement for equipment requiring many users, high throughput, or full routing features. PSRAM adds memory, but Wi-Fi/lwIP still depend on limited internal RAM. Long-term stability, interrupted Flash writes, and real upstream outages need further validation.
+
+Management is available only on the AP, but uses HTTP. Management passwords/network settings are stored unencrypted in NVS. Serial recovery assumes physical access and has no login authentication; secure boot and Flash encryption are not enabled. Set up the device from a trusted client/network, choose your own passwords, and keep the management page and unauthenticated proxy off the public Internet.
