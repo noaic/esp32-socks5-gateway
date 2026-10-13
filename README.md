@@ -81,8 +81,6 @@ These are short LAN tests, not public-Internet speed guarantees. Both clients an
 | Item | Recommended / tested configuration | Notes |
 | --- | --- | --- |
 | Board | ESP32-S3 N16R8, dual core at 240 MHz | N16R8 means 16 MB Flash and 8 MB PSRAM; check the board specification |
-| Flash | 16 MB, DIO, 80 MHz | Stores firmware and persistent settings |
-| PSRAM | 8 MB, Octal, 80 MHz | Additional working memory; the default build tests it at startup |
 | USB cable | A cable that carries data | A charging-only cable cannot flash firmware or provide a serial console |
 | Status LED | One WS2812 / NeoPixel on GPIO48 | A board with a different LED pin does not match this configuration; LED output can be disabled on the management page |
 | Wi-Fi router | An available 2.4 GHz network | ESP32-S3 cannot join a network that only provides 5 GHz |
@@ -101,7 +99,7 @@ A different ESP32 chip, Flash/PSRAM size, or LED pin may require hardware config
 | Required: use of the gateway | Browser, existing 2.4 GHz Wi-Fi, IPv4 / NO AUTH / UDP ASSOCIATE SOCKS5 service | User-provided; building and host tests do not require a live proxy |
 | Optional: development/testing | Linux system GCC/binutils, Node.js; ccache speeds repeated builds | GCC runs host C tests, Node.js runs frontend tests; neither is a firmware runtime dependency |
 
-The Web interface is currently in Chinese; serial commands are in English. System GCC and the ESP32 cross-compiler serve different purposes. Do not substitute the former for the firmware toolchain or update the dependency lock merely to make a build pass.
+The management and first-use pages default to English. A Chinese first browser language (`zh` or `zh-*`) selects Simplified Chinese; other or unavailable preferences use English. A secondary Chinese preference does not override an English first preference. Serial commands are in English. System GCC and the ESP32 cross-compiler serve different purposes. Do not substitute the former for the firmware toolchain or update the dependency lock merely to make a build pass.
 
 ## Prepare the upstream SOCKS5 service
 
@@ -128,7 +126,7 @@ Example network settings:
 
 Replace these examples with your network's actual settings. The firmware default `192.168.1.2:7897` does not establish that a proxy exists there. Do not enter your computer's `127.0.0.1` as the server address: to the ESP32, that address refers to the ESP32 itself.
 
-For Xray, see the [SOCKS settings example](examples/xray-socks-settings.json) and the DNS examples in `examples/`. They are fragments to integrate into your own complete Xray configuration. Other proxy software can work if it meets the requirements above. Keep an unauthenticated proxy accessible only to trusted networks.
+If your upstream SOCKS5 service uses [Xray](https://github.com/XTLS/Xray-core), start with the [complete VLESS + TCP + REALITY client example](examples/xray-client-reality.json) and its [field placement and setup guide (Chinese)](examples/README.md). It runs on the LAN computer; replace its LAN address and remote node parameters before use. The existing [SOCKS settings example](examples/xray-socks-settings.json) and DNS examples remain fragments for integration into an existing configuration. Other proxy software can work if it meets the requirements above. Keep an unauthenticated proxy accessible only to trusted networks.
 
 ## Install the toolchain and build
 
@@ -146,18 +144,16 @@ Transparent forwarding uses a small lwIP patch. lwIP is the TCP/IP networking li
 #### Windows 11: official EIM and PowerShell
 
 1. Download the EIM GUI installer from [Espressif](https://dl.espressif.com/dl/eim/). Follow the prerequisite checks in the [official Windows guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/get-started/windows-setup.html). If Git is unavailable, install [Git for Windows](https://git-scm.com/install/windows) and open a new PowerShell. `winget` is not required.
-2. In ordinary PowerShell, put the exact commit in a **new** `C:\esp\esp-idf-gateway` directory. Set both `core.autocrlf=false` and `core.eol=lf` in the SDK and its submodules to preserve LF bytes and source/patch hashes. The first setting alone is insufficient: lwIP's `.gitattributes` marks C files as `text`, so native line endings still matter. Global Git settings are unchanged:
+2. In ordinary PowerShell, put the exact commit in a **new** `C:\esp\esp-idf-gateway` directory. The preparation script accepts both LF and CRLF checkouts; no Git line-ending settings need to be changed:
 
 ```powershell
 git --version
 New-Item -ItemType Directory -Force C:\esp | Out-Null
-git clone -c core.autocrlf=false -c core.eol=lf --no-checkout --depth 1 https://github.com/espressif/esp-idf.git C:\esp\esp-idf-gateway
+git clone --no-checkout --depth 1 https://github.com/espressif/esp-idf.git C:\esp\esp-idf-gateway
 Set-Location C:\esp\esp-idf-gateway
 git fetch --depth 1 origin fff9895c82d744c7237be8847347bdd1b07c6643
 git checkout --detach fff9895c82d744c7237be8847347bdd1b07c6643
-git -c core.autocrlf=false -c core.eol=lf submodule update --init --recursive --depth 1
-git submodule foreach --recursive "git config core.autocrlf false"
-git submodule foreach --recursive "git config core.eol lf"
+git submodule update --init --recursive --depth 1
 ```
 
 3. In EIM, choose **Custom Installation** and point its path to this existing Git directory. Official [Expert Installation](https://docs.espressif.com/projects/idf-im-ui/en/latest/expert_installation.html) supports using an existing repository without rewriting its contents. Install the tools for that checkout, including the compiler, CMake, Ninja, and Python environment. Use this directory rather than installing an arbitrary latest SDK for the build.
@@ -173,7 +169,7 @@ cmake --version
 ninja --version
 ```
 
-Both commits must match the table, and the EOL check must show `i/lf w/lf`. `i/lf w/crlf` means the working file uses CRLF, which fails the byte hash even with correct HEADs and clean Git status. Changing configuration does not rewrite existing files; back up an existing CRLF checkout before recreating it with LF settings. Use EIM's generated activation entry point. For legacy script installs, PowerShell runs `.\install.ps1 esp32s3` and `.\export.ps1` from the SDK directory; CMD uses `install.bat esp32s3` / `export.bat`. Windows does not use Bash's `source`.
+Both commits must match the table. The EOL command is diagnostic: `i/lf w/lf` and `i/lf w/crlf` are both supported; the latter means Git checked out Windows line endings, not that the source was edited. An existing SDK need not be reinstalled for this difference. Use EIM's generated activation entry point. For legacy script installs, PowerShell runs `.\install.ps1 esp32s3` and `.\export.ps1` from the SDK directory; CMD uses `install.bat esp32s3` / `export.bat`. Windows does not use Bash's `source`.
 
 #### Linux: Ubuntu/Debian or Fedora, Bash
 
@@ -196,13 +192,11 @@ Prepare a separate SDK directory; `esp-idf-gateway` must not already exist:
 mkdir -p ~/esp
 cd ~/esp
 
-git clone -c core.autocrlf=false -c core.eol=lf --no-checkout --depth 1 https://github.com/espressif/esp-idf.git esp-idf-gateway
+git clone --no-checkout --depth 1 https://github.com/espressif/esp-idf.git esp-idf-gateway
 cd esp-idf-gateway
 git fetch --depth 1 origin fff9895c82d744c7237be8847347bdd1b07c6643
 git checkout --detach fff9895c82d744c7237be8847347bdd1b07c6643
-git -c core.autocrlf=false -c core.eol=lf submodule update --init --recursive --depth 1
-git submodule foreach --recursive "git config core.autocrlf false"
-git submodule foreach --recursive "git config core.eol lf"
+git submodule update --init --recursive --depth 1
 
 ./install.sh esp32s3
 python3 tools/idf_tools.py install cmake ninja
@@ -233,7 +227,7 @@ For WSL2, install inside the Linux distribution using the Linux steps; Windows c
 Windows, in activated PowerShell:
 
 ```powershell
-git clone -c core.autocrlf=false -c core.eol=lf https://github.com/noaic/esp32-socks5-gateway.git C:\esp\esp32-socks5-gateway
+git clone https://github.com/noaic/esp32-socks5-gateway.git C:\esp\esp32-socks5-gateway
 Set-Location C:\esp\esp32-socks5-gateway
 python tools/prepare_lwip.py apply
 python tools/prepare_lwip.py check
@@ -242,7 +236,7 @@ python tools/prepare_lwip.py check
 Linux/WSL2, in activated Bash:
 
 ```bash
-git clone -c core.autocrlf=false -c core.eol=lf https://github.com/noaic/esp32-socks5-gateway.git ~/esp32-socks5-gateway
+git clone https://github.com/noaic/esp32-socks5-gateway.git ~/esp32-socks5-gateway
 cd ~/esp32-socks5-gateway
 python3 tools/prepare_lwip.py apply
 python3 tools/prepare_lwip.py check
@@ -252,15 +246,17 @@ If you already have the project, enter that checkout rather than cloning again. 
 
 `patches/lwip-v6.1-transparent-tcp.patch` contains the `ip4.c` changes; `patches/lwip-v6.1.json` records the commits and original/patched SHA-256 hashes. The script copies the entire `$IDF_PATH/components/lwip` component, including its lwIP submodule, into project `components/lwip` and modifies only that copy. ESP-IDF's [same-name component precedence](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/api-guides/build-system.html#multiple-components-with-the-same-name) selects the project override, leaving the global SDK and other projects unaffected. The generated directory is Git-ignored.
 
+For `ip4.c` hash checks, CRLF is treated as LF in memory; the pinned hashes are unchanged. `apply` and `restore` write LF only to the verified project copy, and CRLF patch input is also supported without rewriting the patch file. `check` is read-only. Other component files must still match the SDK byte for byte; actual code/whitespace edits, a BOM, or lone CR characters are rejected.
+
 These commands work in either activated terminal (Linux can also use `python3`):
 
 | Command | Purpose |
 | --- | --- |
-| `python tools/prepare_lwip.py apply` | Check revisions, create the local copy, and patch it; rerunning a correctly applied state does not apply it twice |
-| `python tools/prepare_lwip.py check` | Apply nothing; verify revisions, global original hash, local patched hash, and the complete file list/content |
-| `python tools/prepare_lwip.py restore` | Reverse the local `ip4.c` patch; keep the local component, leave the SDK untouched, and do not disable transparent mode |
+| `python tools/prepare_lwip.py apply` | Check revisions/content, create or reuse the local copy, normalize its `ip4.c` to LF, and patch it; safe to repeat |
+| `python tools/prepare_lwip.py check` | Read-only verification of revisions, LF-normalized original/patched hashes, and the complete component file list/content |
+| `python tools/prepare_lwip.py restore` | Reverse the verified local `ip4.c` patch and leave it as LF; no activated SDK needed. Keep the local component and do not disable transparent mode |
 
-Default transparent mode requires another `apply` and `check` after `restore`; `check` rejects an unpatched copy. If an existing build used global lwIP, run `idf.py reconfigure` after preparing the override, then build. The script refuses to overwrite revision/hash mismatches or unexpected edits; also check LF line endings on Windows. An ESP-IDF/esp-lwIP upgrade may change the `ip4.c` path, hook placement, or interfaces, requiring a separate patch review/adaptation. Do not just change commits/hashes to bypass validation.
+Default transparent mode requires another `apply` and `check` after `restore`; `check` rejects an unpatched copy. If an existing build used global lwIP, run `idf.py reconfigure` after preparing the override, then build. Revision errors identify the expected and actual commits; a hash error means changes beyond LF/CRLF. Back up and inspect unexpected SDK/local edits, or prepare a separate clean SDK; do not force overwrites. `apply`/`check` also reject other component changes, and writes through local symlinks are refused. An ESP-IDF/esp-lwIP upgrade may change the `ip4.c` path, hook placement, or interfaces, requiring a separate patch review/adaptation. Do not just change commits/hashes to bypass validation.
 
 ### 3. Configure and build
 
@@ -367,25 +363,25 @@ The SOCKS5 server uses NO AUTH, so there are no SOCKS5 username/password fields.
 
 ### 4. Enter network and proxy settings
 
-In “网关配置” (gateway configuration), enter:
+In “Gateway configuration”, enter (English interface labels are used below):
 
 | Page field | What to enter |
 | --- | --- |
-| 上游 Wi-Fi SSID / 密码 | Your existing 2.4 GHz Wi-Fi name and password |
+| Upstream Wi-Fi SSID / password | Your existing 2.4 GHz Wi-Fi name and password |
 | SOCKS5 IPv4 | The server's IPv4 address reachable by the ESP32, such as `192.168.1.2` |
-| SOCKS5 端口 | Its actual SOCKS5 listening port, such as `7897` |
-| AP 名称 / 密码 | Name/password of the Wi-Fi created by the ESP32 |
-| 最大接入数 | Maximum clients: 1 or 2 |
-| DHCP 下发的 DNS IPv4 | DNS server for clients, such as `1.1.1.1` |
-| AP 网段第三段 X | Third part of the AP address: default 4 gives `192.168.4.1` |
+| SOCKS5 port | Its actual SOCKS5 listening port, such as `7897` |
+| AP name / password | Name/password of the Wi-Fi created by the ESP32 |
+| Maximum clients | Maximum clients: 1 or 2 |
+| DNS IPv4 advertised by DHCP | DNS server for clients, such as `1.1.1.1` |
+| AP subnet third octet X | Third part of the AP address: default 4 gives `192.168.4.1` |
 
-**An empty password field preserves the existing password.** It does not clear it. For an upstream Wi-Fi network without a password, select “上游 Wi-Fi 无密码”. SSID/password lengths use UTF-8 bytes; non-ASCII characters can take multiple bytes.
+**An empty password field preserves the existing password.** It does not clear it. For an upstream Wi-Fi network without a password, select “Upstream Wi-Fi has no password”. SSID/password lengths use UTF-8 bytes; non-ASCII characters can take multiple bytes.
 
 Upstream and AP networks must not overlap. For a typical `255.255.255.0` network, upstream `192.168.1.x` and AP `192.168.4.x` are separate. If upstream also uses `192.168.4.x`, you could change X to 10 and use `192.168.10.1` for management. The page detects conflicts using the actual network masks.
 
 ### 5. Save, reconnect, and confirm
 
-Click “保存并重启” (save and restart). Losing the current connection is expected. The new configuration is tried first: **after restart, click “确认保留配置” (confirm configuration) within 180 seconds**, or the device restores the previous settings.
+Click “Save and restart”. Losing the current connection is expected. The new configuration is tried first: **after restart, click “Confirm and keep configuration” within 180 seconds**, or the device restores the previous settings.
 
 ```mermaid
 flowchart TD
@@ -398,7 +394,7 @@ flowchart TD
 
 Use the new AP name/password if changed, the new management address if X changed, and the new management password if changed. If a client retains its old IP address, disconnect and reconnect Wi-Fi to obtain a new DHCP lease.
 
-Before confirming, check that STA has an IPv4 address, run “运行连接诊断” (connection diagnostics), and try an ordinary webpage. After confirmation, use “立即检查互联网” (check Internet now) for an additional check. Automatic Internet checks wait until network settings are confirmed. A single LED color or an “accepted” operation message is insufficient to establish successful connectivity.
+Before confirming, check that STA has an IPv4 address, run “Run connection diagnostics”, and try an ordinary webpage. After confirmation, use “Check Internet now” for an additional check. Automatic Internet checks wait until network settings are confirmed. A single LED color or an “accepted” operation message is insufficient to establish successful connectivity.
 
 ## Daily use and status LED
 
@@ -424,7 +420,7 @@ Check from the nearest component outward: **client → ESP32 AP → upstream Wi-
 | --- | --- |
 | `idf.py` not found | Activate ESP-IDF in this terminal, then enter the project directory |
 | Wrong Python / CMake / Ninja version or path | Python ≥ 3.10, CMake ≥ 3.22, and the selected SDK's terminal; do not mix Windows and WSL toolchains |
-| lwIP revision/hash mismatch | Correct `$IDF_PATH` commit and complete submodules; do not force the patch |
+| lwIP revision/hash mismatch | Check both pinned commits and complete submodules. LF/CRLF alone is accepted; inspect actual edits with `git diff` in the SDK's lwIP repository, or back up the project override before recreating it. Do not force the patch |
 | Build still refers to another SDK or global lwIP | Select the correct environment and run `idf.py reconfigure`; if stale cache remains, run `idf.py fullclean` inside the project and rebuild |
 | Component download fails during build | Read the first download error; check access to GitHub, Espressif downloads, and the component registry; keep TLS/hash verification enabled |
 | Serial port missing or flashing fails | Data cable, board USB connector, driver, port permissions, WSL USB attachment, and other programs using the port |
@@ -463,7 +459,7 @@ Neither `reset-*` command acts immediately. The board displays the effects and a
 
 After `reset-admin`, open the page and set a new password. After `reset-network`, use the compiled AP name/password and management address `192.168.4.1`. If you entered Wi-Fi credentials in `menuconfig`, the compiled defaults contain them; “defaults” does not mean all passwords become empty.
 
-The Web “恢复默认配置” action also keeps the management password, but requires the 180-second confirmation after restarting. Serial `reset-network` uses the 30-second code above. **RST/EN and power cycling only restart the board; they do not clear saved passwords/network settings. BOOT is not a recovery-menu button.** Routine recovery does not require erasing all Flash.
+The Web “Restore default configuration” action also keeps the management password, but requires the 180-second confirmation after restarting. Serial `reset-network` uses the 30-second code above. **RST/EN and power cycling only restart the board; they do not clear saved passwords/network settings. BOOT is not a recovery-menu button.** Routine recovery does not require erasing all Flash.
 
 To capture logs and send commands through one connection, run from the project root:
 
@@ -547,7 +543,7 @@ node tests/management_feedback_harness.js
 node tests/management_transport_harness.js
 ```
 
-The ESP-IDF Python environment includes pyserial/esptool, which the UART tests need. The current suite has **75 host regressions**, plus two frontend feedback/compatibility harnesses. Check actual counts, failures, and skips. Passing these checks does not replace Wi-Fi, power-loss, or long-running hardware tests.
+The ESP-IDF Python environment includes pyserial/esptool, which the UART tests need. The current suite has **75 firmware host regressions and 16 lwIP preparation regressions**, plus two frontend feedback/compatibility harnesses. The preparation tests use isolated temporary Git repositories to cover LF/CRLF, repeat operations, read-only checks, and rejection of unexpected edits. Check actual counts, failures, and skips. Passing these checks does not replace Wi-Fi, power-loss, or long-running hardware tests.
 
 ### Repository layout and further reading
 
@@ -557,7 +553,7 @@ The ESP-IDF Python environment includes pyserial/esptool, which the UART tests n
 | `patches/` | lwIP patch and revision/hash metadata |
 | `tools/` | Patch preparation, UART capture, network probes, and benchmarks |
 | `tests/` | C/Python host tests and JavaScript frontend tests |
-| `examples/` | Xray configuration fragments |
+| `examples/` | Complete Xray client example, field placement guide, and configuration fragments |
 | `sdkconfig.defaults` | Initial hardware and feature defaults |
 | `dependencies.lock` | Firmware component version record |
 | `docs/` | Architecture, maintenance, performance, and development notes |

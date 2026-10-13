@@ -81,8 +81,6 @@ flowchart LR
 | 项目 | 推荐 / 已验证配置 | 注意事项 |
 | --- | --- | --- |
 | 开发板 | ESP32-S3 N16R8，双核 240 MHz | N16R8 表示 16 MB Flash 和 8 MB PSRAM；购买前确认板型 |
-| Flash | 16 MB，DIO，80 MHz | 存放固件和持久配置 |
-| PSRAM | 8 MB，Octal，80 MHz | 扩展运行内存，默认构建会在启动时测试它 |
 | USB 线 | 能传输数据的 USB 线 | 只能充电的线无法烧录或读取串口 |
 | 状态灯 | GPIO48 上的单颗 WS2812 / NeoPixel | 若板上灯的引脚不同，当前灯控配置不匹配；可在管理页关闭灯 |
 | 无线路由器 | 可用的 2.4 GHz Wi-Fi | ESP32-S3 使用 2.4 GHz，不能连接只提供 5 GHz 的网络 |
@@ -101,7 +99,7 @@ flowchart LR
 | 必需：使用环境 | 浏览器、已有 2.4 GHz Wi-Fi、支持 IPv4 / NO AUTH / UDP ASSOCIATE 的 SOCKS5 服务 | 用户自行准备；仅编译和宿主测试无需实际代理服务 |
 | 可选：开发测试 | Linux 系统 GCC/binutils、Node.js；ccache 可加速重复构建 | GCC 用于宿主 C 测试，Node.js 用于前端测试，均不是固件中的运行依赖 |
 
-当前管理页面为中文，串口命令为英文。电脑上的系统 GCC 与 ESP32 的交叉编译器用途不同；不要用前者替换固件工具链，也不要为通过构建而更新锁文件。
+管理页和首次设置页默认英文；浏览器首选语言为中文（`zh` 或 `zh-*`）时显示简体中文，其他语言或无法识别时使用英文。首选英文、备用中文时仍显示英文。串口命令为英文。电脑上的系统 GCC 与 ESP32 的交叉编译器用途不同；不要用前者替换固件工具链，也不要为通过构建而更新锁文件。
 
 ## 准备上游 SOCKS5 服务
 
@@ -128,7 +126,7 @@ flowchart LR
 
 这些地址仅用于说明。请换成你自己的网络参数；固件默认的 `192.168.1.2:7897` 并不表示该地址一定存在代理服务。也不要把电脑上的 `127.0.0.1` 填给 ESP32：对 ESP32 来说，它代表 ESP32 自己。
 
-使用 Xray 时，可参考 [SOCKS 设置示例](examples/xray-socks-settings.json)及 `examples/` 中的 DNS 示例。这些文件是配置片段，需要放入你自己的完整 Xray 配置中。其他代理软件只要满足上述条件也可以使用。无认证的代理应仅对可信网络开放。
+上游 SOCKS5 服务使用 [Xray](https://github.com/XTLS/Xray-core) 时，可先阅读 [VLESS + TCP + REALITY 完整客户端示例](examples/xray-client-reality.json)及其 [字段位置与使用说明](examples/README.md)。它运行在局域网电脑上，使用前须替换 LAN 地址和远端节点参数。原有 [SOCKS 设置示例](examples/xray-socks-settings.json)及 DNS 示例仍是用于合并到已有配置的片段。其他代理软件只要满足上述条件也可以使用。无认证的代理应仅对可信网络开放。
 
 ## 安装工具链并编译
 
@@ -146,18 +144,16 @@ Windows 使用 **PowerShell**，Linux / WSL2 使用 **Bash**；请只执行对�
 #### Windows 11：官方 EIM 与 PowerShell
 
 1. 从 [乐鑫官方页面](https://dl.espressif.com/dl/eim/) 下载 EIM 图形安装器。按 [Windows 官方安装说明](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/get-started/windows-setup.html)完成依赖检查；若 Git 尚未可用，先安装 [Git for Windows](https://git-scm.com/install/windows)，再打开新的 PowerShell。无需使用 `winget`。
-2. 在普通 PowerShell 中将指定提交放入**尚不存在的** `C:\esp\esp-idf-gateway`。在 SDK 及其子模块中设置 `core.autocrlf=false` 和 `core.eol=lf`，固定为 LF，保证源码与补丁的哈希一致；仅设置前者并不足够，因为 lwIP 的 `.gitattributes` 将 C 文件标记为 `text`，还会受系统默认换行影响。这不改全局 Git 设置：
+2. 在普通 PowerShell 中将指定提交放入**尚不存在的** `C:\esp\esp-idf-gateway`。准备脚本兼容 LF 和 CRLF 检出，无需调整 Git 换行设置：
 
 ```powershell
 git --version
 New-Item -ItemType Directory -Force C:\esp | Out-Null
-git clone -c core.autocrlf=false -c core.eol=lf --no-checkout --depth 1 https://github.com/espressif/esp-idf.git C:\esp\esp-idf-gateway
+git clone --no-checkout --depth 1 https://github.com/espressif/esp-idf.git C:\esp\esp-idf-gateway
 Set-Location C:\esp\esp-idf-gateway
 git fetch --depth 1 origin fff9895c82d744c7237be8847347bdd1b07c6643
 git checkout --detach fff9895c82d744c7237be8847347bdd1b07c6643
-git -c core.autocrlf=false -c core.eol=lf submodule update --init --recursive --depth 1
-git submodule foreach --recursive "git config core.autocrlf false"
-git submodule foreach --recursive "git config core.eol lf"
+git submodule update --init --recursive --depth 1
 ```
 
 3. 在 EIM 中选择 **Custom Installation**，将路径指向这个现有的 Git 目录。官方 [Expert Installation](https://docs.espressif.com/projects/idf-im-ui/en/latest/expert_installation.html)支持使用已有仓库而不改写其内容。安装该检出的工具链、CMake、Ninja 和 Python 环境；使用此目录，不要另外安装“最新版本”后直接用它构建。
@@ -173,7 +169,7 @@ cmake --version
 ninja --version
 ```
 
-两个提交输出须与表中一致，换行检查须为 `i/lf w/lf`。`i/lf w/crlf` 表示磁盘源码被转换为 CRLF，即使 HEAD 正确、Git 状态干净也会触发文件哈希错误。改变 Git 配置不会自动重写已有文件；已有 CRLF 检出需先备份，再按 LF 设置重新检出。EIM 使用其生成的激活入口；传统脚本安装在该 SDK 目录中，PowerShell 安装用 `.\install.ps1 esp32s3`，激活用 `.\export.ps1`，CMD 对应 `install.bat esp32s3` / `export.bat`。Windows 不使用 Bash 的 `source`。
+两个提交输出须与表中一致。换行命令仅用于诊断：`i/lf w/lf` 和 `i/lf w/crlf` 都受支持，后者表示 Git 检出了 Windows 换行，并不等于源码被修改，无需因此重装已有 SDK。EIM 使用其生成的激活入口；传统脚本安装在该 SDK 目录中，PowerShell 安装用 `.\install.ps1 esp32s3`，激活用 `.\export.ps1`，CMD 对应 `install.bat esp32s3` / `export.bat`。Windows 不使用 Bash 的 `source`。
 
 #### Linux：Ubuntu/Debian 或 Fedora，Bash
 
@@ -196,13 +192,11 @@ sudo dnf install git wget flex bison gperf python3 python3-pip cmake ninja-build
 mkdir -p ~/esp
 cd ~/esp
 
-git clone -c core.autocrlf=false -c core.eol=lf --no-checkout --depth 1 https://github.com/espressif/esp-idf.git esp-idf-gateway
+git clone --no-checkout --depth 1 https://github.com/espressif/esp-idf.git esp-idf-gateway
 cd esp-idf-gateway
 git fetch --depth 1 origin fff9895c82d744c7237be8847347bdd1b07c6643
 git checkout --detach fff9895c82d744c7237be8847347bdd1b07c6643
-git -c core.autocrlf=false -c core.eol=lf submodule update --init --recursive --depth 1
-git submodule foreach --recursive "git config core.autocrlf false"
-git submodule foreach --recursive "git config core.eol lf"
+git submodule update --init --recursive --depth 1
 
 ./install.sh esp32s3
 python3 tools/idf_tools.py install cmake ninja
@@ -233,7 +227,7 @@ WSL2 应在 Linux 发行版内执行 Linux 安装步骤，不能直接复用 Win
 Windows 已激活的 PowerShell：
 
 ```powershell
-git clone -c core.autocrlf=false -c core.eol=lf https://github.com/noaic/esp32-socks5-gateway.git C:\esp\esp32-socks5-gateway
+git clone https://github.com/noaic/esp32-socks5-gateway.git C:\esp\esp32-socks5-gateway
 Set-Location C:\esp\esp32-socks5-gateway
 python tools/prepare_lwip.py apply
 python tools/prepare_lwip.py check
@@ -242,7 +236,7 @@ python tools/prepare_lwip.py check
 Linux / WSL2 已激活的 Bash：
 
 ```bash
-git clone -c core.autocrlf=false -c core.eol=lf https://github.com/noaic/esp32-socks5-gateway.git ~/esp32-socks5-gateway
+git clone https://github.com/noaic/esp32-socks5-gateway.git ~/esp32-socks5-gateway
 cd ~/esp32-socks5-gateway
 python3 tools/prepare_lwip.py apply
 python3 tools/prepare_lwip.py check
@@ -252,15 +246,17 @@ python3 tools/prepare_lwip.py check
 
 `patches/lwip-v6.1-transparent-tcp.patch` 保存 `ip4.c` 的改动，`patches/lwip-v6.1.json` 记录两个提交与修改前后的 SHA-256。脚本从 `$IDF_PATH/components/lwip` 复制整个组件及其 lwIP 子模块到项目 `components/lwip`，再只修改该副本。ESP-IDF 的 [同名组件优先规则](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/api-guides/build-system.html#multiple-components-with-the-same-name)会选用项目副本，因此全局 SDK 和其他项目不受影响；生成目录已被 Git 忽略。
 
+校验 `ip4.c` 时，脚本在内存中将 CRLF 视为 LF，仍使用原有固定哈希。`apply`、`restore` 只将已验证的项目副本写为 LF；补丁文件本身为 CRLF 时也可使用，不会改写补丁文件。`check` 完全只读。其他组件文件仍须与 SDK 逐字节一致；代码或空白修改、BOM（文件开头的编码标记）及单独的 CR 字符不会被当成正常换行差异放行。
+
 以下命令两种终端都可执行（Linux 也可用 `python3`）：
 
 | 命令 | 具体用途 |
 | --- | --- |
-| `python tools/prepare_lwip.py apply` | 检查版本，创建本地副本并应用补丁；已正确应用时再次执行不会重复打补丁 |
-| `python tools/prepare_lwip.py check` | 不应用补丁；检查提交、全局原始哈希、本地补丁哈希及完整文件列表，确保其他文件未改变 |
-| `python tools/prepare_lwip.py restore` | 反向还原本地 `ip4.c`，保留本地组件目录，不修改全局 SDK，也不自动关闭透明功能 |
+| `python tools/prepare_lwip.py apply` | 检查版本和内容，创建或复用本地副本，将其中的 `ip4.c` 规范为 LF 并应用补丁；可重复执行 |
+| `python tools/prepare_lwip.py check` | 只读检查提交、按 LF 计算的原始/补丁哈希及完整组件的文件列表和内容 |
+| `python tools/prepare_lwip.py restore` | 将已验证的本地 `ip4.c` 反向还原为 LF，无需激活 SDK；保留本地组件目录，不自动关闭透明功能 |
 
-默认配置启用了透明模式，`restore` 后必须重新 `apply`、`check` 才能继续正常构建；`check` 会拒绝未打补丁的副本。若已有构建曾引用全局 lwIP，准备副本后运行 `idf.py reconfigure` 再构建。版本、哈希或其他文件不匹配时脚本会拒绝覆盖；Windows 还应检查 LF 换行。未来升级 ESP-IDF/esp-lwIP 可能改变 `ip4.c` 路径、钩子位置或接口，需要另行审查和适配补丁，不能只改提交或哈希来绕过检查。
+默认配置启用了透明模式，`restore` 后必须重新 `apply`、`check` 才能继续正常构建；`check` 会拒绝未打补丁的副本。若已有构建曾引用全局 lwIP，准备副本后运行 `idf.py reconfigure` 再构建。版本错误会列出预期与实际提交；哈希错误表示存在 LF/CRLF 之外的差异。先备份并检查 SDK 或本地副本的意外修改，或准备独立的干净 SDK，不要强行覆盖。`apply`、`check` 也会拒绝其他组件文件的变化，写入时拒绝通过本地符号链接修改其他位置。未来升级 ESP-IDF/esp-lwIP 可能改变 `ip4.c` 路径、钩子位置或接口，需要另行审查和适配补丁，不能只改提交或哈希来绕过检查。
 
 ### 3. 配置并编译
 
@@ -367,7 +363,7 @@ SOCKS5 上游使用 NO AUTH，因此这里没有 SOCKS5 用户名 / 密码输入
 
 ### 4. 填写网络和代理参数
 
-在“网关配置”中填写：
+在“网关配置”中填写；以下采用中文界面名称，浏览器首选英文时对应 “Gateway configuration”：
 
 | 页面字段 | 应填写的内容 |
 | --- | --- |
@@ -424,7 +420,7 @@ flowchart TD
 | --- | --- |
 | `idf.py` 找不到 | 当前终端是否已执行 ESP-IDF 激活脚本；激活后再进入项目目录 |
 | Python / CMake / Ninja 版本或路径错误 | 检查 Python ≥ 3.10、CMake ≥ 3.22，并使用对应 SDK 的终端；不要混用 Windows 与 WSL 工具链 |
-| lwIP 提示 revision / hash 不匹配 | `$IDF_PATH` 是否指向指定提交，子模块是否完整；不要强行打补丁 |
+| lwIP 提示 revision / hash 不匹配 | 检查两个固定提交及子模块是否完整。单纯 LF/CRLF 差异已兼容；在 SDK 的 lwIP 仓库中用 `git diff` 检查实际修改，或备份项目副本后再重新生成，不要强行打补丁 |
 | 构建仍引用旧 SDK 或全局 lwIP | 确认正确环境并运行 `idf.py reconfigure`；缓存仍不一致时，在项目内 `idf.py fullclean` 后重新构建 |
 | 编译无法下载组件 | 查看第一个下载错误，检查网络是否能访问 GitHub、乐鑫下载站和组件注册表；不要关闭 TLS / 哈希校验 |
 | 找不到串口或无法烧录 | 数据线、板上 USB 接口、驱动、串口权限；WSL 中确认 USB 是否已转发；关闭其他占用串口的程序 |
@@ -547,7 +543,7 @@ node tests/management_feedback_harness.js
 node tests/management_transport_harness.js
 ```
 
-ESP-IDF 的 Python 环境包含 pyserial/esptool，串口相关测试会用到它们。当前有 **75 项宿主回归**，另有两组前端反馈 / 兼容测试。请检查实际执行数量、失败和跳过情况；测试通过并不代替真实 Wi-Fi、掉电或长时间稳定性测试。
+ESP-IDF 的 Python 环境包含 pyserial/esptool，串口相关测试会用到它们。当前有 **75 项固件宿主回归与 16 项 lwIP 准备脚本回归**，另有两组前端反馈 / 兼容测试。准备脚本测试使用独立的临时 Git 仓库，覆盖 LF/CRLF、重复操作、只读检查及拒绝意外修改。请检查实际执行数量、失败和跳过情况；测试通过并不代替真实 Wi-Fi、掉电或长时间稳定性测试。
 
 ### 项目目录与进一步阅读
 
@@ -557,7 +553,7 @@ ESP-IDF 的 Python 环境包含 pyserial/esptool，串口相关测试会用到�
 | `patches/` | lwIP 补丁及版本 / 哈希信息 |
 | `tools/` | 补丁准备、串口采集、网络探测和测速工具 |
 | `tests/` | C/Python 宿主测试和 JavaScript 前端测试 |
-| `examples/` | Xray 配置片段 |
+| `examples/` | Xray 完整客户端示例、字段位置说明及配置片段 |
 | `sdkconfig.defaults` | 初次配置的默认硬件和功能参数 |
 | `dependencies.lock` | 固件组件版本记录 |
 | `docs/` | 架构、维护、性能和开发记录 |

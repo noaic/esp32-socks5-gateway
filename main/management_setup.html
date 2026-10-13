@@ -1,10 +1,96 @@
-<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>设置管理口令</title><style>body{font:16px system-ui,sans-serif;max-width:500px;margin:40px auto;padding:20px;background:#f3f5f8;color:#182335}main{padding:24px;background:white;border-radius:12px}h1{font-size:23px}p{line-height:1.7}label{display:block;margin:18px 0}input,button{font:inherit;padding:11px;border-radius:6px;border:1px solid #aebaca;box-sizing:border-box;width:100%}input{margin-top:8px}button{background:#245ac7;color:white;cursor:pointer}#message{white-space:pre-wrap;line-height:1.7}[hidden]{display:none!important}a{display:block;margin-top:15px;color:#245ac7}</style>
-<main><h1>首次设置管理口令</h1><p>设置后才能查看状态或修改配置。账号固定为 <strong>admin</strong>，口令与 Wi-Fi 密码独立。</p>
-<form id="setup"><label>管理口令<input id="password" type="password" required minlength="12" maxlength="64" autocomplete="new-password"></label><label>再次输入<input id="confirm" type="password" required minlength="12" maxlength="64" autocomplete="new-password"></label><button id="save" type="submit">设置口令</button></form>
-<p id="message" role="status"></p><a id="login" href="/" hidden>打开管理页并登录</a><p>口令需 12～64 字节，建议使用易于保存的 ASCII 字符组合。请保存好口令；<strong>RST/EN 和断电只会重启，不会清除口令。</strong></p></main>
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title data-i18n="setup_title">Set management password</title><style>body{font:16px system-ui,sans-serif;max-width:500px;margin:40px auto;padding:20px;background:#f3f5f8;color:#182335}main{padding:24px;background:white;border-radius:12px}h1{font-size:23px}p{line-height:1.7}label{display:block;margin:18px 0}input,button{font:inherit;padding:11px;border-radius:6px;border:1px solid #aebaca;box-sizing:border-box;width:100%}input{margin-top:8px}button{background:#245ac7;color:white;cursor:pointer}#message{white-space:pre-wrap;line-height:1.7}[hidden]{display:none!important}a{display:block;margin-top:15px;color:#245ac7}</style>
+<main><h1 data-i18n="setup_heading">First-time management password setup</h1><p><span data-i18n="setup_intro">Set a password before viewing status or changing configuration. The account is always</span> <strong>admin</strong><span data-i18n="setup_independent">; its password is separate from the Wi-Fi password.</span></p>
+<form id="setup"><label><span data-i18n="setup_password">Management password</span><input id="password" type="password" required minlength="12" maxlength="64" autocomplete="new-password"></label><label><span data-i18n="setup_confirm">Enter it again</span><input id="confirm" type="password" required minlength="12" maxlength="64" autocomplete="new-password"></label><button id="save" type="submit" data-i18n="setup_save">Set password</button></form>
+<p id="message" role="status"></p><a id="login" href="/" hidden data-i18n="setup_login">Open management page and log in</a><p><span data-i18n="setup_help">Use 12–64 bytes; an ASCII combination that you can store safely is recommended. Keep the password;</span><strong><span data-i18n="setup_reset_help">RST/EN and power cycling only restart the device; they do not clear the password.</span></strong></p></main>
 <script>
 'use strict';
+// English is the default; only a Chinese first browser preference selects Chinese.
+function preferredLanguage(){
+ if(typeof navigator==='undefined')return '';
+ try{const first=navigator.languages&&navigator.languages[0];if(typeof first==='string'&&first)return first;}catch(error){}
+ try{return typeof navigator.language==='string'?navigator.language:'';}catch(error){return '';}
+}
+const pageLanguage=/^zh(?:-|$)/i.test(preferredLanguage())?'zh-CN':'en';
+const text={
+ "invalid_response": ["Invalid response format","响应格式无效"],
+ "setup_failed": ["Could not save: {0}. If the connection was lost, reopen the home page; a saved password will not be reset.","保存失败：{0}。若连接中断，请重新打开首页；已保存的口令不会被重置。"],
+ "setup_done": ["Password saved; no restart is needed. Open the management page and log in with account admin and the password you just set.","口令已保存，无需重启。打开管理页，用账号 admin 和刚设置的口令登录。"],
+ "saving": ["Saving…","正在保存…"],
+ "password_length": ["The password must be 12–64 bytes.","口令需为 12～64 字节。"],
+ "password_mismatch": ["The two passwords do not match.","两次输入的口令不一致。"],
+ "timeout": ["Request timed out (8 seconds)","请求超时（8 秒）"],
+ "network_failed": ["Network request failed","网络请求失败"],
+ "http_error": ["Request failed (HTTP {0})","请求失败（HTTP {0}）"]
+};
+// English labels are already in the HTML; store only their Chinese counterparts.
+const chineseLabels={
+ "setup_title": "设置管理口令",
+ "setup_heading": "首次设置管理口令",
+ "setup_save": "设置口令",
+ "setup_login": "打开管理页并登录",
+ "setup_intro": "设置后才能查看状态或修改配置。账号固定为",
+ "setup_independent": "，口令与 Wi-Fi 密码独立。",
+ "setup_password": "管理口令",
+ "setup_confirm": "再次输入",
+ "setup_help": "口令需 12～64 字节，建议使用易于保存的 ASCII 字符组合。请保存好口令；",
+ "setup_reset_help": "RST/EN 和断电只会重启，不会清除口令。"
+};
+const apiMessages={
+ "INVALID_MANAGE_MARKER": ["Invalid management request marker","管理请求标识无效"],
+ "CROSS_ORIGIN_REJECTED": ["Cross-origin operations are not allowed","跨来源操作被拒绝"],
+ "RESTART_PENDING": ["The device is about to restart; reconnect shortly","即将重启，请稍后重连"],
+ "SETUP_REQUIRED": ["Open the management home page to set a password first","请先打开管理首页设置口令"],
+ "AUTH_REQUIRED": ["Management password required","需要管理密码"],
+ "OUT_OF_MEMORY": ["Not enough memory","内存不足"],
+ "ACTION_MISSING": ["Maintenance action is missing","缺少维护操作"],
+ "INVALID_INTERNET_SETTINGS": ["Invalid check switch or target","检查开关或目标无效"],
+ "INTERNET_SETTINGS_FAILED": ["Maintenance is running or check settings could not be saved; retry shortly","维护执行中或检查设置保存失败，请稍后重试"],
+ "INVALID_LED_SETTING": ["The LED switch must be a boolean","灯开关需为布尔值"],
+ "LED_SETTINGS_FAILED": ["Could not save status LED settings","状态灯设置保存失败"],
+ "INVALID_ACTION": ["Invalid maintenance action","维护操作无效"],
+ "CONFIRM_BEFORE_RESTART": ["Confirm the new configuration first; restarting without confirmation rolls it back","请先确认新配置，未确认重启会回滚"],
+ "CONTROL_UNAVAILABLE": ["Maintenance is running or unavailable; retry shortly","维护任务正在执行或不可用，请稍后重试"],
+ "SETUP_LOCKED": ["A password is already set; log in to the management page","口令已经设置，请登录管理页"],
+ "INVALID_SETUP": ["The passwords must match and contain 12–64 bytes, and configuration must be available for saving","两次口令需一致且为 12～64 字节，或配置当前不可保存"],
+ "SETUP_RESTART_REQUIRED": ["Password saved; restart the device before logging in","口令已保存，请重启后登录"],
+ "CONTROL_BUSY": ["Finish the running maintenance task before saving configuration","维护任务执行中，请结束后再保存配置"],
+ "SUBNET_OVERLAP": ["The AP subnet overlaps upstream Wi-Fi; choose a different third octet","AP 网段与当前上游 Wi-Fi 重叠，请换一个第三段数字"],
+ "CONFIG_STAGE_FAILED": ["Invalid configuration, previous configuration not confirmed, or saving failed","配置无效、尚未确认上一份配置或保存失败"],
+ "INVALID_JSON": ["Invalid JSON or more than 1024 bytes","JSON 无效或超过 1024 字节"],
+ "INVALID_FIELDS": ["Invalid field, type or length","字段、类型或长度无效"],
+ "EMPTY_OBJECT_REQUIRED": ["The request must be {}","请求必须为 {}"],
+ "CONFIRM_FAILED": ["No configuration awaits confirmation, or saving failed","没有待确认配置或保存失败"],
+ "INVALID_CLIENT_TOKEN": ["Invalid client identifier","客户端标识无效"],
+ "CLIENT_DISCONNECT_FAILED": ["Could not disconnect the client; refresh status","断开失败，请刷新"],
+ "CLIENT_CHANGED": ["The client is already offline or has reconnected; refresh status","客户端已经离线或重连，请刷新"]
+};
+function t(key,...values){
+ const pair=text[key]||apiMessages[key];
+ if(!pair)throw Error('Unknown UI text: '+key);
+ return pair[pageLanguage==='zh-CN'?1:0].replace(/\{(\d+)\}/g,(_,index)=>String(values[Number(index)]));
+}
+function localizePage(){
+ document.documentElement.lang=pageLanguage;
+ if(pageLanguage!=='zh-CN')return;
+ const label=key=>Object.prototype.hasOwnProperty.call(chineseLabels,key)?chineseLabels[key]:t(key);
+ for(const node of document.querySelectorAll('[data-i18n]'))node.textContent=label(node.dataset.i18n);
+ for(const node of document.querySelectorAll('[data-i18n-placeholder]'))node.setAttribute('placeholder',label(node.dataset.i18nPlaceholder));
+}
+function responseError(data,status){
+ data=data&&typeof data==='object'?data:{};
+ const code=data.error_code;
+ let message;
+ if(Object.prototype.hasOwnProperty.call(apiMessages,code))message=t(code);
+ else{
+  // Translate errors from older firmware too.
+  const legacy=Object.keys(apiMessages).find(key=>apiMessages[key][1]===data.error);
+  message=legacy?t(legacy):typeof data.error==='string'&&!/[\u3400-\u9fff]/.test(data.error)?data.error:t('http_error',status);
+ }
+ const error=Error(message);error.httpStatus=status;error.errorCode=code;return error;
+}
+localizePage();
+
 async function requestJSON(path,payload){
  const method=payload===undefined?'GET':'POST';
  const headers=payload===undefined?{}:{'Content-Type':'application/json','X-Proxy-Action':'manage'};
@@ -12,18 +98,18 @@ async function requestJSON(path,payload){
  if(typeof AbortController!=='function')return new Promise((resolve,reject)=>{
   const xhr=new XMLHttpRequest();xhr.open(method,path);xhr.timeout=8000;xhr.withCredentials=true;
   for(const key of Object.keys(headers))xhr.setRequestHeader(key,headers[key]);
-  xhr.onload=()=>{try{const data=JSON.parse(xhr.responseText);if(xhr.status<200||xhr.status>=300){const error=Error(data.error||`HTTP ${xhr.status}`);error.httpStatus=xhr.status;throw error;}resolve(data);}catch(error){reject(error);}};
-  xhr.ontimeout=()=>reject(Error('请求超时（8 秒）'));xhr.onerror=()=>reject(Error('网络请求失败'));
+  xhr.onload=()=>{try{const data=JSON.parse(xhr.responseText);if(xhr.status<200||xhr.status>=300){throw responseError(data,xhr.status);}resolve(data);}catch(error){reject(error instanceof SyntaxError?Error(t('invalid_response')):error);}};
+  xhr.ontimeout=()=>reject(Error(t("timeout")));xhr.onerror=()=>reject(Error(t("network_failed")));
   xhr.send(encoded===undefined?null:encoded);
  });
  const controller=new AbortController();let expired=false;
  const timer=setTimeout(()=>{expired=true;controller.abort();},8000);
  try{
   const response=await fetch(path,{method,headers,body:encoded,cache:'no-store',credentials:'same-origin',signal:controller.signal});
-  const data=await response.json();if(!response.ok){const error=Error(data.error||`HTTP ${response.status}`);error.httpStatus=response.status;throw error;}return data;
- }catch(error){if(expired)throw Error('请求超时（8 秒）');throw error;}
+  const data=await response.json();if(!response.ok){throw responseError(data,response.status);}return data;
+ }catch(error){if(expired)throw Error(t("timeout"));if(error.httpStatus)throw error;throw Error(t(error instanceof SyntaxError?'invalid_response':'network_failed'));}
  finally{clearTimeout(timer);}
 }
 const el=id=>document.getElementById(id);let busy=false;
-el('setup').onsubmit=async event=>{event.preventDefault();if(busy)return;const password=el('password').value,confirmation=el('confirm').value;if(password!==confirmation){el('message').textContent='两次输入的口令不一致。';return;}const bytes=new TextEncoder().encode(password).length;if(bytes<12||bytes>64){el('message').textContent='口令需为 12～64 字节。';return;}busy=true;el('save').disabled=true;el('message').textContent='正在保存…';try{await requestJSON('/api/setup',{password,confirm:confirmation});el('password').value=el('confirm').value='';el('setup').hidden=true;el('login').hidden=false;el('message').textContent='口令已保存，无需重启。打开管理页，用账号 admin 和刚设置的口令登录。';}catch(error){el('message').textContent=`保存失败：${error.message}。若连接中断，请重新打开首页；已保存的口令不会被重置。`;busy=false;el('save').disabled=false;}};
+el('setup').onsubmit=async event=>{event.preventDefault();if(busy)return;const password=el('password').value,confirmation=el('confirm').value;if(password!==confirmation){el('message').textContent=t("password_mismatch");return;}const bytes=new TextEncoder().encode(password).length;if(bytes<12||bytes>64){el('message').textContent=t("password_length");return;}busy=true;el('save').disabled=true;el('message').textContent=t("saving");try{await requestJSON('/api/setup',{password,confirm:confirmation});el('password').value=el('confirm').value='';el('setup').hidden=true;el('login').hidden=false;el('message').textContent=t("setup_done");}catch(error){el('message').textContent=t("setup_failed", (error.message));busy=false;el('save').disabled=false;}};
 </script></html>

@@ -81,8 +81,6 @@ Android 端末と LAN 内のテストサービスを使い、各場面で 3 回�
 | 項目 | 推奨 / 検証済み構成 | 注意点 |
 | --- | --- | --- |
 | 開発ボード | ESP32-S3 N16R8、デュアルコア 240 MHz | N16R8 は Flash 16 MB、PSRAM 8 MB を示します。購入前に仕様を確認してください |
-| Flash | 16 MB、DIO、80 MHz | ファームウェアと保存する設定に使用します |
-| PSRAM | 8 MB、Octal、80 MHz | 追加の作業用メモリ。既定のビルドでは起動時にテストします |
 | USB ケーブル | データ通信対応のケーブル | 充電専用のケーブルでは書き込みやシリアル通信ができません |
 | 状態 LED | GPIO48 の WS2812 / NeoPixel 1 個 | LED のピンが異なるボードは現在の設定と合いません。管理ページで LED 出力を無効にできます |
 | Wi-Fi ルーター | 利用できる 2.4 GHz ネットワーク | ESP32-S3 は 5 GHz のみのネットワークには接続できません |
@@ -101,7 +99,7 @@ ESP32 の種類、Flash/PSRAM の容量、LED のピンが違う場合、ハー�
 | 必須：利用環境 | ブラウザー、既存の 2.4 GHz Wi-Fi、IPv4 / NO AUTH / UDP ASSOCIATE の SOCKS5 サービス | 利用者が準備。ビルドとホストテストだけなら実際のプロキシは不要 |
 | 任意：開発テスト | Linux のシステム GCC/binutils、Node.js。ccache は再ビルドを高速化 | GCC はホスト C テスト、Node.js はフロントエンドテスト用で、ファームウェアの実行依存ではありません |
 
-現在の Web 画面は中国語、シリアルコマンドは英語です。システム GCC と ESP32 用コンパイラーは別の用途です。ファームウェア用の代わりに前者を使ったり、ビルド成功のためだけにロックファイルを更新したりしないでください。
+管理画面と初回設定画面は既定で英語です。ブラウザーの最優先言語が中国語（`zh` または `zh-*`）なら簡体字中国語、それ以外や判定できない場合は英語を表示します。英語が優先で中国語が第 2 候補の場合も英語です。シリアルコマンドは英語です。システム GCC と ESP32 用コンパイラーは別の用途です。ファームウェア用の代わりに前者を使ったり、ビルド成功のためだけにロックファイルを更新したりしないでください。
 
 ## 上流の SOCKS5 サービスを準備する
 
@@ -128,7 +126,7 @@ ESP32 の種類、Flash/PSRAM の容量、LED のピンが違う場合、ハー�
 
 これらは説明用の値です。自分のネットワークに合わせて変更してください。既定の `192.168.1.2:7897` に、実際のプロキシが存在するとは限りません。パソコン側の `127.0.0.1` を ESP32 に設定しないでください。ESP32 から見ると、これは ESP32 自身を指します。
 
-Xray を使う場合は、[SOCKS 設定例](examples/xray-socks-settings.json)と `examples/` の DNS 設定例を参照してください。これらは設定の一部分で、自分の完全な Xray 設定に組み込む必要があります。上記の条件を満たすほかのプロキシソフトも使用できます。認証なしのプロキシは、信頼できるネットワークだけに公開してください。
+上流の SOCKS5 サービスに [Xray](https://github.com/XTLS/Xray-core) を使う場合は、[VLESS + TCP + REALITY の完全なクライアント設定例](examples/xray-client-reality.json)と [フィールドの配置・使用ガイド（中国語）](examples/README.md)から始めてください。LAN 内のパソコンで動作し、使用前に LAN アドレスとリモートノードの値を置き換えます。既存の [SOCKS 設定例](examples/xray-socks-settings.json)と DNS 設定例は、既存設定に組み込むための部分設定です。上記の条件を満たすほかのプロキシソフトも使用できます。認証なしのプロキシは、信頼できるネットワークだけに公開してください。
 
 ## 開発ツールのインストールとビルド
 
@@ -146,18 +144,16 @@ Windows は **PowerShell**、Linux / WSL2 は **Bash** を使います。自分�
 #### Windows 11：公式 EIM と PowerShell
 
 1. [Espressif の公式ページ](https://dl.espressif.com/dl/eim/)から EIM の GUI インストーラーを取得します。[Windows 公式ガイド](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/get-started/windows-setup.html)の前提条件チェックを行い、Git が使えなければ [Git for Windows](https://git-scm.com/install/windows)を入れて新しい PowerShell を開いてください。`winget` は必須ではありません。
-2. 通常の PowerShell で、**まだ存在しない** `C:\esp\esp-idf-gateway` に指定コミットを取得します。SDK とサブモジュールで `core.autocrlf=false` と `core.eol=lf` の両方を設定し、LF とハッシュを維持します。lwIP の `.gitattributes` は C ファイルを `text` として扱うため、前者だけでは OS の既定改行の影響が残ります。Git の全体設定は変更しません。
+2. 通常の PowerShell で、**まだ存在しない** `C:\esp\esp-idf-gateway` に指定コミットを取得します。準備スクリプトは LF と CRLF の両方に対応するため、Git の改行設定を変更する必要はありません。
 
 ```powershell
 git --version
 New-Item -ItemType Directory -Force C:\esp | Out-Null
-git clone -c core.autocrlf=false -c core.eol=lf --no-checkout --depth 1 https://github.com/espressif/esp-idf.git C:\esp\esp-idf-gateway
+git clone --no-checkout --depth 1 https://github.com/espressif/esp-idf.git C:\esp\esp-idf-gateway
 Set-Location C:\esp\esp-idf-gateway
 git fetch --depth 1 origin fff9895c82d744c7237be8847347bdd1b07c6643
 git checkout --detach fff9895c82d744c7237be8847347bdd1b07c6643
-git -c core.autocrlf=false -c core.eol=lf submodule update --init --recursive --depth 1
-git submodule foreach --recursive "git config core.autocrlf false"
-git submodule foreach --recursive "git config core.eol lf"
+git submodule update --init --recursive --depth 1
 ```
 
 3. EIM の **Custom Installation** で、この既存 Git ディレクトリを指定します。公式の [Expert Installation](https://docs.espressif.com/projects/idf-im-ui/en/latest/expert_installation.html)は既存リポジトリを変更せずに利用できます。このチェックアウトに対応するコンパイラー、CMake、Ninja、Python 環境を準備してください。別の最新 SDK をそのまま使う方法ではありません。
@@ -173,7 +169,7 @@ cmake --version
 ninja --version
 ```
 
-両コミットが表と一致し、改行が `i/lf w/lf` であることを確認してください。`i/lf w/crlf` は実ファイルが CRLF で、HEAD が正しく Git 状態が正常でもハッシュが一致しません。設定変更だけでは既存ファイルを書き直さないため、CRLF の場合はバックアップ後に LF 設定で取得し直します。EIM は生成された入口で有効化し、従来方式なら SDK 内の PowerShell で `.\install.ps1 esp32s3` / `.\export.ps1`、CMD で `install.bat esp32s3` / `export.bat` を使います。Windows で Bash の `source` は使いません。
+両コミットが表と一致することを確認してください。改行コマンドは診断用で、`i/lf w/lf` と `i/lf w/crlf` の両方に対応します。後者は Git が Windows の改行で取得したことを示し、ソースの編集とは限りません。この差だけで SDK を再インストールする必要はありません。EIM は生成された入口で有効化し、従来方式なら SDK 内の PowerShell で `.\install.ps1 esp32s3` / `.\export.ps1`、CMD で `install.bat esp32s3` / `export.bat` を使います。Windows で Bash の `source` は使いません。
 
 #### Linux：Ubuntu/Debian または Fedora、Bash
 
@@ -196,13 +192,11 @@ SDK を別ディレクトリに準備します。`esp-idf-gateway` はまだ存�
 mkdir -p ~/esp
 cd ~/esp
 
-git clone -c core.autocrlf=false -c core.eol=lf --no-checkout --depth 1 https://github.com/espressif/esp-idf.git esp-idf-gateway
+git clone --no-checkout --depth 1 https://github.com/espressif/esp-idf.git esp-idf-gateway
 cd esp-idf-gateway
 git fetch --depth 1 origin fff9895c82d744c7237be8847347bdd1b07c6643
 git checkout --detach fff9895c82d744c7237be8847347bdd1b07c6643
-git -c core.autocrlf=false -c core.eol=lf submodule update --init --recursive --depth 1
-git submodule foreach --recursive "git config core.autocrlf false"
-git submodule foreach --recursive "git config core.eol lf"
+git submodule update --init --recursive --depth 1
 
 ./install.sh esp32s3
 python3 tools/idf_tools.py install cmake ninja
@@ -233,7 +227,7 @@ WSL2 は Linux ディストリビューション内で Linux の手順を実行�
 Windows の有効化済み PowerShell：
 
 ```powershell
-git clone -c core.autocrlf=false -c core.eol=lf https://github.com/noaic/esp32-socks5-gateway.git C:\esp\esp32-socks5-gateway
+git clone https://github.com/noaic/esp32-socks5-gateway.git C:\esp\esp32-socks5-gateway
 Set-Location C:\esp\esp32-socks5-gateway
 python tools/prepare_lwip.py apply
 python tools/prepare_lwip.py check
@@ -242,7 +236,7 @@ python tools/prepare_lwip.py check
 Linux / WSL2 の有効化済み Bash：
 
 ```bash
-git clone -c core.autocrlf=false -c core.eol=lf https://github.com/noaic/esp32-socks5-gateway.git ~/esp32-socks5-gateway
+git clone https://github.com/noaic/esp32-socks5-gateway.git ~/esp32-socks5-gateway
 cd ~/esp32-socks5-gateway
 python3 tools/prepare_lwip.py apply
 python3 tools/prepare_lwip.py check
@@ -252,15 +246,17 @@ python3 tools/prepare_lwip.py check
 
 `patches/lwip-v6.1-transparent-tcp.patch` は `ip4.c` の変更、`patches/lwip-v6.1.json` はコミットと変更前後の SHA-256 を記録します。スクリプトは `$IDF_PATH/components/lwip` のコンポーネント全体と lwIP サブモジュールを、プロジェクトの `components/lwip` にコピーし、そのコピーだけを変更します。ESP-IDF の [同名コンポーネントの優先順位](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/api-guides/build-system.html#multiple-components-with-the-same-name)により、プロジェクト側が使われます。全体の SDK やほかのプロジェクトには影響せず、生成ディレクトリは Git の対象外です。
 
+`ip4.c` のハッシュ検証では、メモリー上で CRLF を LF として扱い、既存の固定ハッシュを維持します。`apply` と `restore` は検証済みのプロジェクト側のコピーだけを LF で保存します。パッチが CRLF でも、そのファイルを書き換えずに利用できます。`check` は読み取り専用です。ほかのファイルは SDK とバイト単位で一致する必要があり、コードや空白の編集、BOM、単独の CR は許可しません。
+
 次のコマンドは、どちらの有効化済みターミナルでも使えます。Linux では `python3` も使えます。
 
 | コマンド | 用途 |
 | --- | --- |
-| `python tools/prepare_lwip.py apply` | 版を確認してコピーとパッチを準備。適用済みなら二重には適用しません |
-| `python tools/prepare_lwip.py check` | パッチを適用せず、コミット、全体の元ハッシュ、コピーの変更後ハッシュ、全ファイルの一覧と内容を確認 |
-| `python tools/prepare_lwip.py restore` | コピーの `ip4.c` を逆適用で戻す。ディレクトリを残し、SDK を変更せず、透過機能も自動では無効にしません |
+| `python tools/prepare_lwip.py apply` | 版と内容を確認し、コピーを作成または再利用。`ip4.c` を LF にしてパッチを適用。繰り返し実行可能 |
+| `python tools/prepare_lwip.py check` | 読み取り専用で、コミット、LF として計算した元/適用後のハッシュ、全ファイルの一覧と内容を検証 |
+| `python tools/prepare_lwip.py restore` | 検証済みのローカル `ip4.c` を逆適用で LF に戻す。SDK の有効化は不要。ディレクトリを残し、透過機能は自動で無効にしません |
 
-既定の透過機能では、`restore` 後に再び `apply` と `check` が必要です。`check` は未適用のコピーを拒否します。以前のビルドが全体の lwIP を参照していた場合、コピー準備後に `idf.py reconfigure` を実行してからビルドします。不一致や想定外の編集は上書きせず、Windows では LF 改行も確認してください。ESP-IDF/esp-lwIP の更新で `ip4.c` のパス、フック位置、インターフェースが変わる可能性があり、パッチの再検討と適合が必要です。コミットやハッシュだけ変えて検証を回避しないでください。
+既定の透過機能では、`restore` 後に再び `apply` と `check` が必要です。`check` は未適用のコピーを拒否します。以前のビルドが全体の lwIP を参照していた場合、コピー準備後に `idf.py reconfigure` を実行してからビルドします。版のエラーには期待値と実際のコミットが表示され、ハッシュのエラーは LF/CRLF 以外の差を示します。SDK やコピーの編集をバックアップして確認するか、別の正常な SDK を準備し、強制上書きは避けてください。`apply` と `check` はほかのファイルの変更も拒否し、書き込み時はローカルのシンボリックリンクも拒否します。ESP-IDF/esp-lwIP の更新で `ip4.c` のパス、フック位置、インターフェースが変わる可能性があり、パッチの再検討と適合が必要です。コミットやハッシュだけ変えて検証を回避しないでください。
 
 ### 3. 設定してビルドする
 
@@ -367,25 +363,25 @@ SOCKS5 は NO AUTH を使うため、SOCKS5 用のユーザー名 / パスワー
 
 ### 4. ネットワークとプロキシを設定する
 
-「网关配置」（ゲートウェイ設定）に入力します。
+「Gateway configuration」（ゲートウェイ設定）に入力します。以下は英語画面の項目名です。
 
 | 画面の項目 | 入力する内容 |
 | --- | --- |
-| 上游 Wi-Fi SSID / 密码 | 既存の 2.4 GHz Wi-Fi 名とパスワード |
+| Upstream Wi-Fi SSID / password | 既存の 2.4 GHz Wi-Fi 名とパスワード |
 | SOCKS5 IPv4 | ESP32 から到達できるサーバーの IPv4。例：`192.168.1.2` |
-| SOCKS5 端口 | 実際の SOCKS5 待ち受けポート。例：`7897` |
-| AP 名称 / 密码 | ESP32 が作る Wi-Fi 名とパスワード |
-| 最大接入数 | 最大接続台数。1 または 2 |
-| DHCP 下发的 DNS IPv4 | 端末が使う DNS。例：`1.1.1.1` |
-| AP 网段第三段 X | AP アドレスの 3 番目の数値。既定の 4 なら `192.168.4.1` |
+| SOCKS5 port | 実際の SOCKS5 待ち受けポート。例：`7897` |
+| AP name / password | ESP32 が作る Wi-Fi 名とパスワード |
+| Maximum clients | 最大接続台数。1 または 2 |
+| DNS IPv4 advertised by DHCP | 端末が使う DNS。例：`1.1.1.1` |
+| AP subnet third octet X | AP アドレスの 3 番目の数値。既定の 4 なら `192.168.4.1` |
 
-**パスワード欄を空にすると、現在のパスワードを保持します。** 削除にはなりません。パスワードなしの上流 Wi-Fi を使う場合は「上游 Wi-Fi 无密码」を選択します。SSID とパスワードの長さは UTF-8 のバイト数で数えるため、日本語などは 1 文字が複数バイトになることがあります。
+**パスワード欄を空にすると、現在のパスワードを保持します。** 削除にはなりません。パスワードなしの上流 Wi-Fi を使う場合は「Upstream Wi-Fi has no password」を選択します。SSID とパスワードの長さは UTF-8 のバイト数で数えるため、日本語などは 1 文字が複数バイトになることがあります。
 
 上流と AP のネットワークは重複できません。一般的な `255.255.255.0` のネットワークなら、上流 `192.168.1.x` と AP `192.168.4.x` は別です。上流も `192.168.4.x` の場合は、例えば X を 10 にすると管理先は `192.168.10.1` になります。画面は実際のネットマスクを使って重複を判断します。
 
 ### 5. 保存後に再接続し、設定を確定する
 
-「保存并重启」（保存して再起動）を押すと、現在の接続が切れます。これは通常の動作です。新しい設定は試用状態になり、**再起動後 180 秒以内に「确认保留配置」（設定を確定）を押さないと、以前の設定に戻ります**。
+「Save and restart」（保存して再起動）を押すと、現在の接続が切れます。これは通常の動作です。新しい設定は試用状態になり、**再起動後 180 秒以内に「Confirm and keep configuration」（設定を確定）を押さないと、以前の設定に戻ります**。
 
 ```mermaid
 flowchart TD
@@ -398,7 +394,7 @@ flowchart TD
 
 AP 名 / パスワードを変えた場合は新しい値で接続し、X を変えた場合は新アドレスを開きます。管理パスワードも変えた場合は新しいものを使います。端末が古い IP を保持しているなら、Wi-Fi を切断して再接続し、DHCP でアドレスを取得し直してください。
 
-確定前に STA が IPv4 を取得したか確認し、「运行连接诊断」（接続診断）を実行して、普通の Web ページを開いてみてください。確定後は「立即检查互联网」（今すぐインターネットを検査）でも確認できます。自動のインターネット検査は、ネットワーク設定が確定するまで待機します。LED の色や「要求を受け付けた」という表示だけで、接続成功とは判断しないでください。
+確定前に STA が IPv4 を取得したか確認し、「Run connection diagnostics」（接続診断）を実行して、普通の Web ページを開いてみてください。確定後は「Check Internet now」（今すぐインターネットを検査）でも確認できます。自動のインターネット検査は、ネットワーク設定が確定するまで待機します。LED の色や「要求を受け付けた」という表示だけで、接続成功とは判断しないでください。
 
 ## 日常の操作と状態 LED
 
@@ -424,7 +420,7 @@ AP 名 / パスワードを変えた場合は新しい値で接続し、X を変
 | --- | --- |
 | `idf.py` が見つからない | 今のターミナルで ESP-IDF を有効にしてから、プロジェクトへ移動 |
 | Python / CMake / Ninja の版やパスが違う | Python ≥ 3.10、CMake ≥ 3.22、対応 SDK のターミナル。Windows と WSL のツールを混ぜない |
-| lwIP の revision / hash が一致しない | `$IDF_PATH` のコミット、サブモジュールの取得。パッチを強制しない |
+| lwIP の revision / hash が一致しない | 両固定コミットとサブモジュールを確認。LF/CRLF の差だけなら対応済みです。SDK の lwIP リポジトリで `git diff` を確認するか、プロジェクト側をバックアップしてから再生成。パッチは強制しない |
 | ビルドが別 SDK や全体の lwIP を参照 | 正しい環境で `idf.py reconfigure`。古いキャッシュが残る場合はプロジェクト内で `idf.py fullclean` 後にビルド |
 | ビルド中に部品をダウンロードできない | 最初のダウンロードエラーと、GitHub・Espressif のダウンロード先・部品レジストリへの接続。TLS / ハッシュ検証は無効にしない |
 | シリアルポートがない / 書き込めない | データ対応ケーブル、ボードの USB 接続先、ドライバー、ポート権限、WSL の USB 接続、ほかのツールによる使用 |
@@ -463,7 +459,7 @@ AP 名 / パスワードを変えた場合は新しい値で接続し、X を変
 
 `reset-admin` 後は管理ページで新しいパスワードを設定します。`reset-network` 後はコンパイル時の AP 名 / パスワードを使い、管理先は `192.168.4.1` になります。`menuconfig` に Wi-Fi パスワードを入れていた場合は既定値にも含まれるため、「復旧」はすべてのパスワードを空にする意味ではありません。
 
-Web の「恢复默认配置」（既定値に復旧）も管理パスワードを保持しますが、再起動後に 180 秒以内の確定が必要です。シリアルの `reset-network` は前述の 30 秒コードで確認します。**RST/EN と電源の入れ直しは再起動のみで、保存されたパスワードやネットワークを消しません。BOOT は復旧メニューには使いません。** 通常の復旧で Flash 全体を消去する必要はありません。
+Web の「Restore default configuration」（既定値に復旧）も管理パスワードを保持しますが、再起動後に 180 秒以内の確定が必要です。シリアルの `reset-network` は前述の 30 秒コードで確認します。**RST/EN と電源の入れ直しは再起動のみで、保存されたパスワードやネットワークを消しません。BOOT は復旧メニューには使いません。** 通常の復旧で Flash 全体を消去する必要はありません。
 
 ログ取得とコマンド送信を 1 つの接続で行う場合は、プロジェクトのルートで次を実行します。
 
@@ -547,7 +543,7 @@ node tests/management_feedback_harness.js
 node tests/management_transport_harness.js
 ```
 
-ESP-IDF の Python 環境には、UART テストで使う pyserial/esptool が含まれます。現在は **75 項目のホスト回帰**と、2 組のフロントエンドの操作結果 / 互換性テストがあります。実行数、失敗、スキップを確認してください。成功しても、実際の Wi-Fi、電源断、長時間のボード動作を検証したことにはなりません。
+ESP-IDF の Python 環境には、UART テストで使う pyserial/esptool が含まれます。現在は **75 項目のファームウェアのホスト回帰と 16 項目の lwIP 準備スクリプト回帰**、および 2 組のフロントエンドの操作結果 / 互換性テストがあります。準備スクリプトのテストは一時 Git リポジトリで LF/CRLF、繰り返し操作、読み取り専用検証、想定外の編集の拒否を確認します。実行数、失敗、スキップを確認してください。成功しても、実際の Wi-Fi、電源断、長時間のボード動作を検証したことにはなりません。
 
 ### ディレクトリと参考資料
 
@@ -557,7 +553,7 @@ ESP-IDF の Python 環境には、UART テストで使う pyserial/esptool が�
 | `patches/` | lwIP パッチとリビジョン / ハッシュ情報 |
 | `tools/` | パッチ準備、UART 記録、ネットワーク調査、速度測定 |
 | `tests/` | C/Python ホストテストと JavaScript フロントエンドテスト |
-| `examples/` | Xray 設定の一部分 |
+| `examples/` | Xray の完全なクライアント設定例、配置ガイド、部分設定 |
 | `sdkconfig.defaults` | ハードウェア / 機能の初期設定 |
 | `dependencies.lock` | ファームウェア部品のバージョン記録 |
 | `docs/` | 設計、保守、性能、開発記録 |

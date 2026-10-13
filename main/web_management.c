@@ -42,6 +42,10 @@ extern const unsigned char page_end[] asm("_binary_management_html_end");
 extern const unsigned char setup_start[] asm("_binary_management_setup_html_start");
 extern const unsigned char setup_end[] asm("_binary_management_setup_html_end");
 
+/* Compile-time JSON: stable codes allow browser-side translation without
+ * per-request language state or extra response buffers. Keep error for older clients. */
+#define API_ERROR(code, message) "{\"error\":\"" message "\",\"error_code\":\"" code "\"}"
+
 static esp_err_t reply(httpd_req_t *req,const char *status,const char *body)
 {
     httpd_resp_set_status(req,status);
@@ -57,19 +61,19 @@ static bool mutation_allowed(httpd_req_t *req)
         strcmp(value,"manage") ||
         httpd_req_get_hdr_value_str(req,"Content-Type",value,sizeof(value))!=ESP_OK ||
         strcmp(value,"application/json")) {
-        reply(req,"403 Forbidden","{\"error\":\"管理请求标识无效\"}"); return false;
+        reply(req,"403 Forbidden",API_ERROR("INVALID_MANAGE_MARKER", "管理请求标识无效")); return false;
     }
     size_t n=httpd_req_get_hdr_value_len(req,"Origin");
     if (n && (httpd_req_get_hdr_value_str(req,"Origin",value,sizeof(value))!=ESP_OK || strcmp(value,origin))) {
-        reply(req,"403 Forbidden","{\"error\":\"跨来源操作被拒绝\"}"); return false;
+        reply(req,"403 Forbidden",API_ERROR("CROSS_ORIGIN_REJECTED", "跨来源操作被拒绝")); return false;
     }
-    if (rebooting) { reply(req,"409 Conflict","{\"error\":\"即将重启，请稍后重连\"}"); return false; }
+    if (rebooting) { reply(req,"409 Conflict",API_ERROR("RESTART_PENDING", "即将重启，请稍后重连")); return false; }
     return true;
 }
 static bool authorize(httpd_req_t *req,bool mutation)
 {
     if (gateway_settings_needs_setup()) {
-        reply(req,"423 Locked","{\"error\":\"请先打开管理首页设置口令\"}"); return false;
+        reply(req,"423 Locked",API_ERROR("SETUP_REQUIRED", "请先打开管理首页设置口令")); return false;
     }
     char supplied[sizeof(authorization)]={0};
     size_t len=httpd_req_get_hdr_value_len(req,"Authorization");
@@ -80,7 +84,7 @@ static bool authorize(httpd_req_t *req,bool mutation)
     if (ok) for (size_t i=0;i<len;i++) diff|=(unsigned char)supplied[i]^(unsigned char)authorization[i];
     if (!ok || diff) {
         httpd_resp_set_hdr(req,"WWW-Authenticate","Basic realm=\"ESP32 Management\", charset=\"UTF-8\"");
-        reply(req,"401 Unauthorized","{\"error\":\"需要管理密码\"}"); return false;
+        reply(req,"401 Unauthorized",API_ERROR("AUTH_REQUIRED", "需要管理密码")); return false;
     }
     return !mutation || mutation_allowed(req);
 }
@@ -108,9 +112,9 @@ static esp_err_t ap_session(httpd_handle_t handle,int fd)
 }
 static esp_err_t send_json(httpd_req_t *req,cJSON *root)
 {
-    if (!root) return reply(req,"503 Service Unavailable","{\"error\":\"内存不足\"}");
+    if (!root) return reply(req,"503 Service Unavailable",API_ERROR("OUT_OF_MEMORY", "内存不足"));
     char *body=cJSON_PrintUnformatted(root); cJSON_Delete(root);
-    if (!body) return reply(req,"503 Service Unavailable","{\"error\":\"内存不足\"}");
+    if (!body) return reply(req,"503 Service Unavailable",API_ERROR("OUT_OF_MEMORY", "内存不足"));
     esp_err_t err=reply(req,"200 OK",body); cJSON_free(body); return err;
 }
 static esp_err_t page(httpd_req_t *req)
@@ -195,22 +199,22 @@ static esp_err_t action_api(httpd_req_t *req)
     if(!authorize(req,true))return ESP_OK;
     cJSON *root=body(req);
     const cJSON *action=cJSON_GetObjectItemCaseSensitive(root,"action");
-    if(!cJSON_IsString(action)) {cJSON_Delete(root);return reply(req,"400 Bad Request","{\"error\":\"缺少维护操作\"}");}
+    if(!cJSON_IsString(action)) {cJSON_Delete(root);return reply(req,"400 Bad Request",API_ERROR("ACTION_MISSING", "缺少维护操作"));}
     esp_err_t err;
     if(!strcmp(action->valuestring,"internet_settings")) {
         const cJSON *enabled=cJSON_GetObjectItemCaseSensitive(root,"enabled"),*target=cJSON_GetObjectItemCaseSensitive(root,"target");
         if(cJSON_GetArraySize(root)!=3 || !cJSON_IsBool(enabled) || !cJSON_IsNumber(target) ||
             target->valuedouble<0 || target->valuedouble>=GATEWAY_INTERNET_TARGETS || target->valuedouble!=(int)target->valuedouble) {
-            cJSON_Delete(root);return reply(req,"400 Bad Request","{\"error\":\"检查开关或目标无效\"}");
+            cJSON_Delete(root);return reply(req,"400 Bad Request",API_ERROR("INVALID_INTERNET_SETTINGS", "检查开关或目标无效"));
         }
         err=gateway_control_set_internet(cJSON_IsTrue(enabled),(unsigned)target->valueint);cJSON_Delete(root);
-        return reply(req,err==ESP_OK?"200 OK":"409 Conflict",err==ESP_OK?"{\"saved\":true}":"{\"error\":\"维护执行中或检查设置保存失败，请稍后重试\"}");
+        return reply(req,err==ESP_OK?"200 OK":"409 Conflict",err==ESP_OK?"{\"saved\":true}":API_ERROR("INTERNET_SETTINGS_FAILED", "维护执行中或检查设置保存失败，请稍后重试"));
     }
     if(!strcmp(action->valuestring,"led")) {
         const cJSON *enabled=cJSON_GetObjectItemCaseSensitive(root,"enabled");
-        if(cJSON_GetArraySize(root)!=2 || !cJSON_IsBool(enabled)) {cJSON_Delete(root);return reply(req,"400 Bad Request","{\"error\":\"灯开关需为布尔值\"}");}
+        if(cJSON_GetArraySize(root)!=2 || !cJSON_IsBool(enabled)) {cJSON_Delete(root);return reply(req,"400 Bad Request",API_ERROR("INVALID_LED_SETTING", "灯开关需为布尔值"));}
         err=gateway_control_set_led(cJSON_IsTrue(enabled));cJSON_Delete(root);
-        return reply(req,err==ESP_OK?"200 OK":"503 Service Unavailable",err==ESP_OK?"{\"saved\":true}":"{\"error\":\"状态灯设置保存失败\"}");
+        return reply(req,err==ESP_OK?"200 OK":"503 Service Unavailable",err==ESP_OK?"{\"saved\":true}":API_ERROR("LED_SETTINGS_FAILED", "状态灯设置保存失败"));
     }
     gateway_action_t kind=!strcmp(action->valuestring,"reconnect")?GW_ACTION_RECONNECT:
         !strcmp(action->valuestring,"relay_reset")?GW_ACTION_RELAY_RESET:
@@ -218,10 +222,10 @@ static esp_err_t action_api(httpd_req_t *req)
         !strcmp(action->valuestring,"diagnose")?GW_ACTION_DIAGNOSE:
         !strcmp(action->valuestring,"internet")?GW_ACTION_INTERNET:GW_ACTION_NONE;
     bool valid=cJSON_GetArraySize(root)==1 && kind!=GW_ACTION_NONE;cJSON_Delete(root);
-    if(!valid)return reply(req,"400 Bad Request","{\"error\":\"维护操作无效\"}");
-    if(kind==GW_ACTION_REBOOT && gateway_settings_pending())return reply(req,"409 Conflict","{\"error\":\"请先确认新配置，未确认重启会回滚\"}");
+    if(!valid)return reply(req,"400 Bad Request",API_ERROR("INVALID_ACTION", "维护操作无效"));
+    if(kind==GW_ACTION_REBOOT && gateway_settings_pending())return reply(req,"409 Conflict",API_ERROR("CONFIRM_BEFORE_RESTART", "请先确认新配置，未确认重启会回滚"));
     err=gateway_control_submit(kind);
-    if(err!=ESP_OK)return reply(req,"409 Conflict","{\"error\":\"维护任务正在执行或不可用，请稍后重试\"}");
+    if(err!=ESP_OK)return reply(req,"409 Conflict",API_ERROR("CONTROL_UNAVAILABLE", "维护任务正在执行或不可用，请稍后重试"));
     gateway_control_snapshot_t control;gateway_control_snapshot(&control);
     char response[96];snprintf(response,sizeof(response),"{\"queued\":true,\"job_id\":%lu,\"restart\":%s}",
         (unsigned long)control.job,kind==GW_ACTION_REBOOT?"true":"false");
@@ -350,7 +354,7 @@ static cJSON *body(httpd_req_t *req)
 static esp_err_t first_setup(httpd_req_t *req)
 {
     if (!gateway_settings_needs_setup())
-        return reply(req,"409 Conflict","{\"error\":\"口令已经设置，请登录管理页\"}");
+        return reply(req,"409 Conflict",API_ERROR("SETUP_LOCKED", "口令已经设置，请登录管理页"));
     if (!mutation_allowed(req)) return ESP_OK;
     cJSON *root=body(req);
     const cJSON *password=cJSON_GetObjectItemCaseSensitive(root,"password");
@@ -360,9 +364,9 @@ static esp_err_t first_setup(httpd_req_t *req)
     esp_err_t err=valid?gateway_settings_setup_password(password->valuestring):ESP_ERR_INVALID_ARG;
     cJSON_Delete(root);
     if (err!=ESP_OK) return reply(req,err==ESP_ERR_INVALID_STATE?"409 Conflict":"400 Bad Request",
-        "{\"error\":\"两次口令需一致且为 12～64 字节，或配置当前不可保存\"}");
+        API_ERROR("INVALID_SETUP", "两次口令需一致且为 12～64 字节，或配置当前不可保存"));
     if (update_authorization()!=ESP_OK)
-        return reply(req,"500 Internal Server Error","{\"error\":\"口令已保存，请重启后登录\"}");
+        return reply(req,"500 Internal Server Error",API_ERROR("SETUP_RESTART_REQUIRED", "口令已保存，请重启后登录"));
     ESP_LOGI("management","Initial management password set; setup endpoint is now locked");
     return reply(req,"200 OK","{\"configured\":true}");
 }
@@ -387,16 +391,16 @@ static void timer_tick(void *arg)
 static esp_err_t staged(httpd_req_t *req,const gateway_settings_t *candidate)
 {
     gateway_control_snapshot_t control;gateway_control_snapshot(&control);
-    if(control.running)return reply(req,"409 Conflict","{\"error\":\"维护任务执行中，请结束后再保存配置\"}");
+    if(control.running)return reply(req,"409 Conflict",API_ERROR("CONTROL_BUSY", "维护任务执行中，请结束后再保存配置"));
     esp_netif_ip_info_t sta={0};
     esp_netif_get_ip_info(sta_interface,&sta);
     /* A changed STA SSID has an unknown future subnet; recheck on GOT_IP. */
     if (!strcmp(candidate->sta_ssid,gateway_settings()->sta_ssid) &&
         gateway_settings_ap_overlap(candidate,ntohl(sta.ip.addr),ntohl(sta.netmask.addr)))
-        return reply(req,"400 Bad Request","{\"error\":\"AP 网段与当前上游 Wi-Fi 重叠，请换一个第三段数字\"}");
+        return reply(req,"400 Bad Request",API_ERROR("SUBNET_OVERLAP", "AP 网段与当前上游 Wi-Fi 重叠，请换一个第三段数字"));
     esp_err_t err=gateway_settings_stage(candidate);
     if (err!=ESP_OK) return reply(req,err==ESP_ERR_INVALID_STATE?"409 Conflict":"400 Bad Request",
-        "{\"error\":\"配置无效、尚未确认上一份配置或保存失败\"}");
+        API_ERROR("CONFIG_STAGE_FAILED", "配置无效、尚未确认上一份配置或保存失败"));
     rebooting=true;
     /* Timer runs at 1 s; response is sent before the next scheduled restart. */
     esp_timer_stop(timer); esp_timer_start_periodic(timer,2000000);
@@ -407,31 +411,31 @@ static esp_err_t staged(httpd_req_t *req,const gateway_settings_t *candidate)
 static esp_err_t save(httpd_req_t *req)
 {
     if (!authorize(req,true)) return ESP_OK;
-    cJSON *root=body(req); if (!root) return reply(req,"400 Bad Request","{\"error\":\"JSON 无效或超过 1024 字节\"}");
+    cJSON *root=body(req); if (!root) return reply(req,"400 Bad Request",API_ERROR("INVALID_JSON", "JSON 无效或超过 1024 字节"));
     gateway_settings_t next=*gateway_settings();
     bool valid=management_settings_patch(root,&next);
     cJSON_Delete(root);
-    if (!valid) return reply(req,"400 Bad Request","{\"error\":\"字段、类型或长度无效\"}");
+    if (!valid) return reply(req,"400 Bad Request",API_ERROR("INVALID_FIELDS", "字段、类型或长度无效"));
     return staged(req,&next);
 }
 static esp_err_t confirm(httpd_req_t *req)
 {
     if (!authorize(req,true)) return ESP_OK;
     cJSON *root=body(req); bool valid=root && !root->child; cJSON_Delete(root);
-    if (!valid) return reply(req,"400 Bad Request","{\"error\":\"请求必须为 {}\"}");
+    if (!valid) return reply(req,"400 Bad Request",API_ERROR("EMPTY_OBJECT_REQUIRED", "请求必须为 {}"));
     if (gateway_settings_pending() && esp_timer_get_time()>=confirmation_deadline) {
         timer_work(NULL); return ESP_FAIL;
     }
     esp_err_t err=gateway_settings_confirm();
     if (err==ESP_OK) esp_timer_stop(timer);
     return reply(req,err==ESP_OK?"200 OK":"409 Conflict",err==ESP_OK?
-        "{\"confirmed\":true}":"{\"error\":\"没有待确认配置或保存失败\"}");
+        "{\"confirmed\":true}":API_ERROR("CONFIRM_FAILED", "没有待确认配置或保存失败"));
 }
 static esp_err_t defaults(httpd_req_t *req)
 {
     if (!authorize(req,true)) return ESP_OK;
     cJSON *root=body(req); bool valid=root && !root->child; cJSON_Delete(root);
-    if (!valid) return reply(req,"400 Bad Request","{\"error\":\"请求必须为 {}\"}");
+    if (!valid) return reply(req,"400 Bad Request",API_ERROR("EMPTY_OBJECT_REQUIRED", "请求必须为 {}"));
     gateway_settings_t next; gateway_settings_defaults(&next);
     strcpy(next.admin_password,gateway_settings()->admin_password);
     return staged(req,&next);
@@ -442,7 +446,7 @@ static esp_err_t kick(httpd_req_t *req)
     cJSON *root=body(req); const cJSON *v=cJSON_GetObjectItemCaseSensitive(root,"token");
     bool valid=root && root->child==v && v && !v->next && management_number(v,1,UINT32_MAX);
     uint32_t token=valid?(uint32_t)v->valuedouble:0; cJSON_Delete(root);
-    if (!valid) return reply(req,"400 Bad Request","{\"error\":\"客户端标识无效\"}");
+    if (!valid) return reply(req,"400 Bad Request",API_ERROR("INVALID_CLIENT_TOKEN", "客户端标识无效"));
     proxy_client_info_t clients[PROXY_AP_MAX_CLIENTS]; proxy_clients_snapshot(clients);
     for (unsigned i=0;i<PROXY_AP_MAX_CLIENTS;i++) if (clients[i].connected && clients[i].token==token) {
         uint16_t aid;
@@ -450,9 +454,9 @@ static esp_err_t kick(httpd_req_t *req)
             break;
         esp_err_t err=esp_wifi_deauth_sta(aid);
         return reply(req,err==ESP_OK?"200 OK":"409 Conflict",err==ESP_OK?
-            "{\"disconnected\":true}":"{\"error\":\"断开失败，请刷新\"}");
+            "{\"disconnected\":true}":API_ERROR("CLIENT_DISCONNECT_FAILED", "断开失败，请刷新"));
     }
-    return reply(req,"409 Conflict","{\"error\":\"客户端已经离线或重连，请刷新\"}");
+    return reply(req,"409 Conflict",API_ERROR("CLIENT_CHANGED", "客户端已经离线或重连，请刷新"));
 }
 esp_err_t web_management_start(esp_netif_t *ap,esp_netif_t *sta)
 {
