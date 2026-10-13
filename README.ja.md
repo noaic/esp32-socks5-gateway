@@ -92,13 +92,16 @@ ESP32 の種類、Flash/PSRAM の容量、LED のピンが違う場合、ハー�
 
 ### ソフトウェア
 
-- **ESP-IDF**：ビルドと書き込みに使う、Espressif の開発ツールです。後述の正確なリビジョンが必要です。
-- **Git、Python 3.10 以降**と、ESP-IDF の公式インストールガイドに記載されたシステム依存パッケージ。
-- IPv4、認証なし、UDP 転送に対応した **SOCKS5 サービス**。
-- 管理ページを開くブラウザー。現在のファームウェアの Web 画面は中国語、シリアルコマンドは英語です。このガイドでは必要な中国語のボタン名も示します。
-- ホスト回帰テストには Linux の GCC/binutils、フロントエンドテストには Node.js が必要です。ファームウェアのビルドに Node.js は不要です。
+| 種類 | 依存関係と用途 | 準備方法 |
+| --- | --- | --- |
+| 必須：開発ツール | Git、Python ≥ 3.10（3.12 推奨）、CMake ≥ 3.22、Ninja | Windows は公式 EIM、Linux は後述のシステムパッケージ。指定 IDF の推奨は CMake 4.0.3、Ninja 1.12.1 |
+| 必須：SDK | 指定コミットの ESP-IDF v6.1 と esp-lwIP | 後述の表を参照。FreeRTOS と lwIP は ESP-IDF に含まれ、別途インストールしません |
+| 自動管理：ツールチェーン | ESP32-S3 用 Xtensa GCC 15.2.0、esptool、Python ビルドツール、Component Manager | EIM または IDF スクリプトが、このコミットの一覧に従って取得 |
+| 自動管理：部品 | cJSON 1.7.19、led_strip 3.0.3 | `main/idf_component.yml` に宣言し、`dependencies.lock` で版とハッシュを固定。初回ビルドで `managed_components/` に取得 |
+| 必須：利用環境 | ブラウザー、既存の 2.4 GHz Wi-Fi、IPv4 / NO AUTH / UDP ASSOCIATE の SOCKS5 サービス | 利用者が準備。ビルドとホストテストだけなら実際のプロキシは不要 |
+| 任意：開発テスト | Linux のシステム GCC/binutils、Node.js。ccache は再ビルドを高速化 | GCC はホスト C テスト、Node.js はフロントエンドテスト用で、ファームウェアの実行依存ではありません |
 
-ESP-IDF のインストーラーは、ESP32 用のファームウェアを作る GCC `15.2.0` クロスコンパイラーを取得します。ホストテストでは、パソコンのシステム GCC を使います。ファームウェアの部品である cJSON `1.7.19` と led_strip `3.0.3` は `dependencies.lock` に記録され、初回のビルド時に自動で取得されます。
+現在の Web 画面は中国語、シリアルコマンドは英語です。システム GCC と ESP32 用コンパイラーは別の用途です。ファームウェア用の代わりに前者を使ったり、ビルド成功のためだけにロックファイルを更新したりしないでください。
 
 ## 上流の SOCKS5 サービスを準備する
 
@@ -129,9 +132,7 @@ Xray を使う場合は、[SOCKS 設定例](examples/xray-socks-settings.json)�
 
 ## 開発ツールのインストールとビルド
 
-以下のコマンドは **Linux / macOS / WSL の Bash** 向けです。Windows ネイティブ環境では [ESP-IDF 公式入門ガイド](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/get-started/index.html)を参照し、インストーラーの開発用ターミナルまたは EIM の有効化スクリプトを使ってください。必要に応じて `python3` を `python` に読み替えます。
-
-WSL でもビルドできますが、USB デバイスが自動で WSL に現れるとは限りません。書き込み前に使用環境の方法で USB を接続 / 転送するか、Windows の ESP-IDF 開発用ターミナルを使ってください。
+Windows は **PowerShell**、Linux / WSL2 は **Bash** を使います。自分の環境に対応するコマンドだけ実行してください。SDK とプロジェクトのパスは空白や非 ASCII 文字を避け、Windows なら `C:\esp` などを使います。ほかのプロジェクトで使う ESP-IDF を上書きせず、別のディレクトリに準備します。
 
 ### 1. 対応する ESP-IDF をインストールする
 
@@ -142,39 +143,101 @@ WSL でもビルドできますが、USB デバイスが自動で WSL に現れ�
 | ESP-IDF v6.1 | `fff9895c82d744c7237be8847347bdd1b07c6643` |
 | esp-lwIP | `c6f2f878e7b0f86033214b85547d579be43351e3` |
 
-まず公式ガイドに従ってシステム依存パッケージを準備します。その後、**まだ存在しない新しいディレクトリ**にインストールしてください。この例では `esp-idf-gateway` を使い、ほかの ESP-IDF 環境を残せるようにします。
+#### Windows 11：公式 EIM と PowerShell
+
+1. [Espressif の公式ページ](https://dl.espressif.com/dl/eim/)から EIM の GUI インストーラーを取得します。[Windows 公式ガイド](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/get-started/windows-setup.html)の前提条件チェックを行い、Git が使えなければ [Git for Windows](https://git-scm.com/install/windows)を入れて新しい PowerShell を開いてください。`winget` は必須ではありません。
+2. 通常の PowerShell で、**まだ存在しない** `C:\esp\esp-idf-gateway` に指定コミットを取得します。CRLF 変換をこのリポジトリで無効にし、ソースとパッチのハッシュを維持します。Git の全体設定は変更しません。
+
+```powershell
+git --version
+New-Item -ItemType Directory -Force C:\esp | Out-Null
+git clone -c core.autocrlf=false --no-checkout --depth 1 https://github.com/espressif/esp-idf.git C:\esp\esp-idf-gateway
+Set-Location C:\esp\esp-idf-gateway
+git fetch --depth 1 origin fff9895c82d744c7237be8847347bdd1b07c6643
+git checkout --detach fff9895c82d744c7237be8847347bdd1b07c6643
+git -c core.autocrlf=false submodule update --init --recursive --depth 1
+```
+
+3. EIM の **Custom Installation** で、この既存 Git ディレクトリを指定します。公式の [Expert Installation](https://docs.espressif.com/projects/idf-im-ui/en/latest/expert_installation.html)は既存リポジトリを変更せずに利用できます。このチェックアウトに対応するコンパイラー、CMake、Ninja、Python 環境を準備してください。別の最新 SDK をそのまま使う方法ではありません。
+4. EIM の **Manage Installations → Open IDF Terminal**、または生成された PowerShell ショートカットから、該当する環境を開きます。**以降の Windows コマンドは、この有効化済みターミナルで実行します。** 普通の PowerShell を新しく開いても自動では有効になりません。
+
+```powershell
+python --version
+idf.py --version
+git -C "$env:IDF_PATH" rev-parse HEAD
+git -C "$env:IDF_PATH\components\lwip\lwip" rev-parse HEAD
+cmake --version
+ninja --version
+```
+
+2 つの Git 出力が表と一致することを確認してください。EIM は生成された入口で有効化します。公式の従来スクリプト方式なら、その SDK ディレクトリ内の PowerShell で `.\install.ps1 esp32s3` により導入し、`.\export.ps1` で有効化します。CMD は `install.bat esp32s3` / `export.bat` です。Windows で Bash の `source` は使いません。
+
+#### Linux：Ubuntu/Debian または Fedora、Bash
+
+Ubuntu/Debian では [公式の依存パッケージ一覧](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/get-started/linux-macos-setup-legacy.html)を使います。Ubuntu 22.04 以降など、Python ≥ 3.10 を提供する版を選んでください。
+
+```bash
+sudo apt-get update
+sudo apt-get install git wget flex bison gperf python3 python3-pip python3-venv cmake ninja-build ccache libffi-dev libssl-dev dfu-util libusb-1.0-0
+```
+
+Fedora はパッケージ名が異なり、`dnf` を使います。Python パッケージに `venv` が含まれます。
+
+```bash
+sudo dnf install git wget flex bison gperf python3 python3-pip cmake ninja-build ccache libffi-devel openssl-devel dfu-util libusb1
+```
+
+SDK を別ディレクトリに準備します。`esp-idf-gateway` はまだ存在しないものとします。
 
 ```bash
 mkdir -p ~/esp
 cd ~/esp
 
-git clone --no-checkout --depth 1 https://github.com/espressif/esp-idf.git esp-idf-gateway
+git clone -c core.autocrlf=false --no-checkout --depth 1 https://github.com/espressif/esp-idf.git esp-idf-gateway
 cd esp-idf-gateway
 git fetch --depth 1 origin fff9895c82d744c7237be8847347bdd1b07c6643
 git checkout --detach fff9895c82d744c7237be8847347bdd1b07c6643
-git submodule update --init --recursive --depth 1
+git -c core.autocrlf=false submodule update --init --recursive --depth 1
 
 ./install.sh esp32s3
 python3 tools/idf_tools.py install cmake ninja
 source ./export.sh
 ```
 
-`git submodule update` は、対応する lwIP を含む関連ソースを取得します。インストールではコンパイラーと Python の依存パッケージもダウンロードします。各コマンドが正常に終わってから先へ進んでください。
-
-両方の正確なコミットがすでにインストールされているなら、既存の環境を有効にするだけで構いません。**新しいターミナルを開くたびに有効化が必要です。** 上記のディレクトリなら、次のように実行します。
+インストーラーが対応するコンパイラーと Python 依存関係を取得します。CMake/Ninja を明示的に取得すると、古いシステム版を避けられます。**新しい Bash を開くたびに有効化し直し**、実際の版を確認します。
 
 ```bash
 source ~/esp/esp-idf-gateway/export.sh
 idf.py --version
 git -C "$IDF_PATH" rev-parse HEAD
+git -C "$IDF_PATH/components/lwip/lwip" rev-parse HEAD
+cmake --version
+ninja --version
 ```
 
-最後のコマンドが表の ESP-IDF コミットを表示することを確認してください。EIM を使う場合は、インストール時に作成された有効化スクリプトを使い、同じようにコミットを確認します。
+#### 既存の環境を再利用できる？
+
+両方のコミットが一致し、サブモジュールが揃い、全体の lwIP ソースが未変更の場合だけ再利用できます。その環境自身の入口で有効化して上記を確認してください。「v6.1」だけでは判断できません。一致しなければ別の SDK を作り、共有の SDK に直接 `git pull` したり版を切り替えたりしないでください。EIM は EIM のターミナル、スクリプト方式は対応する `export` を使います。
+
+浅い clone では `idf.py --version` が `Git version unavailable` と表示してからソースの版を読む場合があります。タグ表示だけでなく、両コミットとパッチ検証で確認してください。
+
+WSL2 は Linux ディストリビューション内で Linux の手順を実行し、Windows のコンパイラーをそのまま再利用しません。USB 接続は後述します。macOS は公式ガイドを参照してください。Bash のプロジェクトコマンドは同じです。
 
 ### 2. プロジェクトを取得し、lwIP を準備する
 
+Windows の有効化済み PowerShell：
+
+```powershell
+git clone -c core.autocrlf=false https://github.com/noaic/esp32-socks5-gateway.git C:\esp\esp32-socks5-gateway
+Set-Location C:\esp\esp32-socks5-gateway
+python tools/prepare_lwip.py apply
+python tools/prepare_lwip.py check
+```
+
+Linux / WSL2 の有効化済み Bash：
+
 ```bash
-git clone https://github.com/noaic/esp32-socks5-gateway.git ~/esp32-socks5-gateway
+git clone -c core.autocrlf=false https://github.com/noaic/esp32-socks5-gateway.git ~/esp32-socks5-gateway
 cd ~/esp32-socks5-gateway
 python3 tools/prepare_lwip.py apply
 python3 tools/prepare_lwip.py check
@@ -182,11 +245,23 @@ python3 tools/prepare_lwip.py check
 
 すでに取得済みなら、そのディレクトリに移動してください。以降のプロジェクトコマンドは、**`CMakeLists.txt` があるプロジェクトのルート**で実行します。
 
-準備スクリプトはコミットとソースのハッシュを確認し、プロジェクト内に生成する `components/lwip` にパッチを適用します。グローバルの ESP-IDF は変更しません。不一致が出た場合は開発環境を確認し、パッチを無理に適用しないでください。
+`patches/lwip-v6.1-transparent-tcp.patch` は `ip4.c` の変更、`patches/lwip-v6.1.json` はコミットと変更前後の SHA-256 を記録します。スクリプトは `$IDF_PATH/components/lwip` のコンポーネント全体と lwIP サブモジュールを、プロジェクトの `components/lwip` にコピーし、そのコピーだけを変更します。ESP-IDF の [同名コンポーネントの優先順位](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/api-guides/build-system.html#multiple-components-with-the-same-name)により、プロジェクト側が使われます。全体の SDK やほかのプロジェクトには影響せず、生成ディレクトリは Git の対象外です。
+
+次のコマンドは、どちらの有効化済みターミナルでも使えます。Linux では `python3` も使えます。
+
+| コマンド | 用途 |
+| --- | --- |
+| `python tools/prepare_lwip.py apply` | 版を確認してコピーとパッチを準備。適用済みなら二重には適用しません |
+| `python tools/prepare_lwip.py check` | パッチを適用せず、コミット、全体の元ハッシュ、コピーの変更後ハッシュ、全ファイルの一覧と内容を確認 |
+| `python tools/prepare_lwip.py restore` | コピーの `ip4.c` を逆適用で戻す。ディレクトリを残し、SDK を変更せず、透過機能も自動では無効にしません |
+
+既定の透過機能では、`restore` 後に再び `apply` と `check` が必要です。`check` は未適用のコピーを拒否します。以前のビルドが全体の lwIP を参照していた場合、コピー準備後に `idf.py reconfigure` を実行してからビルドします。不一致や想定外の編集は上書きせず、Windows では LF 改行も確認してください。ESP-IDF/esp-lwIP の更新で `ip4.c` のパス、フック位置、インターフェースが変わる可能性があり、パッチの再検討と適合が必要です。コミットやハッシュだけ変えて検証を回避しないでください。
 
 ### 3. 設定してビルドする
 
-```bash
+次の設定・ビルドコマンドは、両方の有効化済みターミナルで同じです。
+
+```text
 idf.py menuconfig
 ```
 
@@ -199,7 +274,7 @@ idf.py menuconfig
 
 保存してメニューを閉じ、次を実行します。
 
-```bash
+```text
 idf.py build
 idf.py size
 ```
@@ -208,25 +283,60 @@ idf.py size
 
 `sdkconfig.defaults` は ESP32-S3、Flash、PSRAM などの初期設定を提供します。既存の `sdkconfig` を上書きしないため、古い設定を使う場合もボードの仕様を確認してください。
 
+Linux x86_64 のパッチ準備、ビルド、容量確認は検証済みです。Windows 11/EIM、各ディストリビューションのパッケージ導入、WSL2 USB は公式説明と照合していますが、各環境と実機での確認が必要です。
+
 ## 書き込みと初回の接続
 
 ### 1. ボードにファームウェアを書き込む
 
-データ対応 USB ケーブルで接続し、実際のシリアルポートを確認します。Linux では `/dev/ttyACM0` や `/dev/ttyUSB0`、macOS では `/dev/cu.*`、Windows では `COM5` などが例です。名前は環境により異なります。
+Windows 11 では「デバイス マネージャー → ポート（COM と LPT）」で接続前後を比較し、追加された COM ポートを探します。USB ブリッジに応じたメーカーのドライバーも必要になる場合があります。Linux は接続前後の一覧と権限を確認します。
 
-ESP-IDF を有効にしたプロジェクトのターミナルから、例えば次を実行します。
+```bash
+ls /dev/ttyACM* /dev/ttyUSB* 2>/dev/null
+ls -l /dev/ttyACM0
+```
+
+`/dev/ttyACM0` と `COM5` は例なので、実際のポートに置き換えてください。macOS は通常 `/dev/cu.*` です。Linux のデバイスが `dialout` グループなら `sudo usermod -aG dialout "$USER"` 後にログアウト / ログインします。ほかのグループは実際の所有権に合わせ、常時 root で書き込む方法は避けます。
+
+Linux の有効化済みプロジェクトターミナル：
 
 ```bash
 idf.py -p /dev/ttyACM0 flash monitor
 ```
 
-Windows の開発用ターミナルでは、例えば次の指定になります。
+Windows の有効化済み PowerShell プロジェクトターミナル：
 
-```text
+```powershell
 idf.py -p COM5 flash monitor
 ```
 
 `flash` は書き込み、`monitor` は **115200 baud** のシリアルログ表示です。ESP-IDF monitor は `Ctrl+]` で終了できます。書き込み、monitor、ほかのシリアルツールで同じポートを同時に使わないでください。
+
+現在は **UART0 コンソール**設定です。ボードの UART / USB-UART 接続口を優先してください。ネイティブ USB で書き込めても、その接続口に現在の UART ログが出るとは限りません。自動でダウンロードモードに入れない場合は、ボードの BOOT/EN 操作説明に従います。
+
+**WSL2 USB：**Windows に [Microsoft の説明に従って usbipd-win](https://learn.microsoft.com/en-us/windows/wsl/connect-usb)を入れ、WSL2 ディストリビューションを起動します。次は Windows PowerShell のコマンドです。`4-4` は例で、`usbipd list` の実際の BUSID に置き換えてください。`bind` は管理者権限が必要です。
+
+```powershell
+usbipd list
+usbipd bind --busid 4-4
+usbipd attach --wsl --busid 4-4
+```
+
+その後 WSL Bash で `/dev/ttyACM*` / `/dev/ttyUSB*` を探し、Linux のコマンドで書き込みます。リセット後に再認識され、割り当てを再確認する場合があります。同じ USB を Windows と WSL のシリアルツールから同時には使えません。
+
+#### パーティション、イメージ、再書き込み
+
+`partitions.csv` は次の配置を定義します。16 MB Flash の残りは未割り当てで、OTA やファイルシステム用パーティションはありません。
+
+| 領域 | 開始アドレス | サイズ | 用途 |
+| --- | --- | --- | --- |
+| `nvs` | `0x9000` | `0x6000`（24 KiB） | 永続設定などの NVS データ |
+| `phy_init` | `0xf000` | `0x1000`（4 KiB） | PHY 初期化データの予約領域。現在は独立した PHY イメージなし |
+| `factory` | `0x10000` | 4 MiB | アプリケーション |
+
+ビルドは `build/bootloader/bootloader.bin`（アプリ起動）、`build/partition_table/partition-table.bin`（配置の説明）、`build/esp32-socks5-gateway.bin`（アプリ）を生成します。現在の `build/flash_args` は順に `0x0`、`0x8000`、`0x10000` を指定し、`idf.py flash` が使用します。手作業でアドレスを推測する必要はありません。
+
+通常の書き込みは必要なイメージ範囲を消去・書き込みする処理で、`erase-flash` とは異なります。同じ配置なら NVS 設定は通常残ります。全消去はネットワークと管理パスワードを消し、結合した完全イメージの埋め合わせ領域も NVS を上書きする場合があります。通常の更新では全消去せず、配置や互換性のない設定形式を変える前に設定を保存してください。既存 NVS は新しいコンパイル時の既定値より優先します。
 
 ### 2. ESP32 の Wi-Fi に接続する
 
@@ -308,7 +418,9 @@ AP 名 / パスワードを変えた場合は新しい値で接続し、X を変
 | 症状 | 最初に確認する点 |
 | --- | --- |
 | `idf.py` が見つからない | 今のターミナルで ESP-IDF を有効にしてから、プロジェクトへ移動 |
+| Python / CMake / Ninja の版やパスが違う | Python ≥ 3.10、CMake ≥ 3.22、対応 SDK のターミナル。Windows と WSL のツールを混ぜない |
 | lwIP の revision / hash が一致しない | `$IDF_PATH` のコミット、サブモジュールの取得。パッチを強制しない |
+| ビルドが別 SDK や全体の lwIP を参照 | 正しい環境で `idf.py reconfigure`。古いキャッシュが残る場合はプロジェクト内で `idf.py fullclean` 後にビルド |
 | ビルド中に部品をダウンロードできない | 最初のダウンロードエラーと、GitHub・Espressif のダウンロード先・部品レジストリへの接続。TLS / ハッシュ検証は無効にしない |
 | シリアルポートがない / 書き込めない | データ対応ケーブル、ボードの USB 接続先、ドライバー、ポート権限、WSL の USB 接続、ほかのツールによる使用 |
 | 起動時に PSRAM エラーが出る | ボードが N16R8 / Octal PSRAM 設定と合うか、電源が安定しているか |
@@ -360,6 +472,8 @@ python tools/uart_capture.py --port /dev/ttyACM0 --no-reset --interactive --time
 
 ### 実装を簡単に理解する
 
+`main/` は ESP-IDF の Wi-Fi、`esp_netif`、socket、HTTP、NVS API を使ってゲートウェイの動作を定義します。**FreeRTOS は ESP-IDF 内蔵のスケジューラー**で、TCP/UDP や保守タスク、キュー、ロックを扱います。**lwIP は TCP/IP スタック**で、IPv4、TCP 接続交渉、再送などを担当します。アプリが転送方針を決め、SDK がドライバーとサービスを提供し、FreeRTOS が実行を調整し、lwIP が通信を処理します。別の OS をボードに導入する必要はありません。
+
 ESP32 を、データを受け取り、相手に渡す中継役として考えると分かりやすくなります。
 
 - **TCP** は、多くの Web 接続などで使う、確実な転送を行う仕組みです。ゲートウェイは端末が接続したい相手を記録し、SOCKS5 `CONNECT` で代理接続を依頼して、応答を端末へ返します。
@@ -370,6 +484,8 @@ ESP32 を、データを受け取り、相手に渡す中継役として考え�
 全体の容量は、同時に中継する TCP 接続が 64、UDP flow が 32 です。TCP の宛先や終了処理を記録する 512 件の対応表もありますが、**TCP を 512 接続同時に転送できる意味ではありません**。再送など TCP の基本動作は lwIP が担当し、アプリの固定ループで複数の接続を処理します。
 
 ### Web ページへの TCP 接続を追う
+
+**なぜ `ip4.c` を変更する？** 端末の Web 要求は外部ホスト宛てなので、通常のローカル socket ではその TCP 接続を受け取れません。パッチは IPv4 検証後、ローカルアドレス判定前に入力フックを入れ、宛先の記録と変更を可能にします。出力側はヘッダー準備後、ネットワークインターフェースへ渡す前に元のアドレスへ戻します。変更には独立したパケットコピーを使い、lwIP の再送用データを壊しません。SOCKS5 socket を開くだけではこの透過取り込み・アドレス復元はできず、アプリが TCP 全体を実装し直す必要もありません。[ESP-IDF の lwIP 説明](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/api-guides/lwip.html)も参照してください。
 
 スマートフォンが Web サイトの `203.0.113.10:443` に接続するとします。このアドレスは説明用の例です。
 
