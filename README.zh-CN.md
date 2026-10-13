@@ -126,7 +126,7 @@ flowchart LR
 
 这些地址仅用于说明。请换成你自己的网络参数；固件默认的 `192.168.1.2:7897` 并不表示该地址一定存在代理服务。也不要把电脑上的 `127.0.0.1` 填给 ESP32：对 ESP32 来说，它代表 ESP32 自己。
 
-上游 SOCKS5 服务使用 [Xray](https://github.com/XTLS/Xray-core) 时，可先阅读 [VLESS + TCP + REALITY 完整客户端示例](examples/xray-client-reality.json)及其 [字段位置与使用说明](examples/README.md)。它运行在局域网电脑上，使用前须替换 LAN 地址和远端节点参数。原有 [SOCKS 设置示例](examples/xray-socks-settings.json)及 DNS 示例仍是用于合并到已有配置的片段。其他代理软件只要满足上述条件也可以使用。无认证的代理应仅对可信网络开放。
+上游 SOCKS5 服务使用 [Xray](https://github.com/XTLS/Xray-core) 时，可先阅读 [VLESS + TCP + REALITY 完整客户端模板](examples/xray-client-reality.json)及其 [字段位置与使用说明](examples/README.md)。它运行在局域网电脑上；须将所有 `<...>` 占位符替换为自己的 LAN 地址和远端节点参数，再执行配置检查或启动。原有 [SOCKS 设置示例](examples/xray-socks-settings.json)及 DNS 示例仍是用于合并到已有配置的片段。其他代理软件只要满足上述条件也可以使用。无认证的代理应仅对可信网络开放。
 
 ## 安装工具链并编译
 

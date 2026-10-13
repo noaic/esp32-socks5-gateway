@@ -17,22 +17,26 @@ flowchart LR
 
 ## 先替换示例参数
 
-这是一份**结构完整的模板**，不是已经可联网的节点配置。`203.0.113.10` 是文档保留地址，UUID、公钥、SNI 和短 ID 也是示例值，必须换成你自己的节点参数。将它复制为独立的 `config.json`，先不要覆盖正在使用的配置。
+这是一份**结构完整的模板**，使用 `<...>` 明确标出待填写的参数，不包含可用节点地址或凭据。将它复制为独立的 `config.json`，先不要覆盖正在使用的配置；替换所有占位符后，再执行配置检查和启动。替换时保留 JSON 的双引号，删除值中的尖括号。
 
 表中的 `[0]` 表示数组里的第一个对象；`outbounds[0]` 在本例就是 `tag: proxy` 的对象。
 
-| 配置位置 | 示例值 | 应填写什么 |
+| 配置位置 | 占位符或示例值 | 应填写什么 |
 | --- | --- | --- |
 | `inbounds[0].port` | `7897` | 提供给 ESP32 的 SOCKS5 端口 |
-| `inbounds[0].settings.ip` | `192.168.1.2` | 运行 Xray 的电脑 LAN IPv4；供 SOCKS5 回复 UDP 中继地址 |
-| `outbounds[0].settings.vnext[0].address` | `203.0.113.10` | 远端节点实际地址；首次配置建议直接用 IPv4，减少解析依赖 |
+| `inbounds[0].settings.ip` | `<LAN_IPV4>` | 运行 Xray 的电脑 LAN IPv4；供 SOCKS5 回复 UDP 中继地址 |
+| `outbounds[0].settings.vnext[0].address` | `<REMOTE_ADDRESS>` | 远端节点实际地址；首次配置建议直接用 IPv4，减少解析依赖 |
 | `outbounds[0].settings.vnext[0].port` | `443` | 远端 VLESS 监听端口，与本地 SOCKS5 端口不同 |
-| `outbounds[0].settings.vnext[0].users[0].id` | 示例 UUID | 远端节点分配给你的 UUID |
-| `outbounds[0].streamSettings.realitySettings.serverName` | `www.example.com` | 节点指定的 SNI；须符合服务端允许的名称 |
-| `outbounds[0].streamSettings.realitySettings.publicKey` | 示例公钥 | 服务端 REALITY 的 X25519 公钥，不是私钥；分享链接常写作 `pbk` |
-| `outbounds[0].streamSettings.realitySettings.shortId` | `0123456789abcdef` | 服务端允许的一个短 ID；分享链接常写作 `sid` |
+| `outbounds[0].settings.vnext[0].users[0].id` | `<VLESS_UUID>` | 远端节点分配给你的 UUID |
+| `outbounds[0].streamSettings.realitySettings.serverName` | `<REALITY_SERVER_NAME>` | 节点指定的 SNI；须符合服务端允许的名称 |
+| `outbounds[0].streamSettings.realitySettings.publicKey` | `<REALITY_PUBLIC_KEY>` | 服务端 REALITY 的 X25519 公钥，不是私钥；分享链接常写作 `pbk` |
+| `outbounds[0].streamSettings.realitySettings.shortId` | `<REALITY_SHORT_ID>` | 服务端允许的一个短 ID；分享链接常写作 `sid` |
 
-`settings.ip` 不是 ESP32 的 AP 地址 `192.168.4.1`，也不是 ESP32 的 STA 地址。电脑更换地址后要同步修改它。随后在 ESP32 管理页面填写这台电脑的 IPv4 和 `7897`。
+LAN 地址从本机网络设置获取；远端地址、端口、UUID、SNI、公钥和短 ID 从你自己的节点配置或服务提供方获取。同一套节点参数必须匹配，不要复制官方示例中的值，也不要把服务端私钥填入客户端。`7897`、`443` 是数值类型的示例端口，应按实际配置调整；`<...>` 不是 Xray 的变量语法，不会自动展开。
+
+DNS 中的阿里和 Cloudflare 地址沿用本仓库的 [DNS 片段](xray-dns-settings.json)，是明确选择的公共解析服务，不是远端 VLESS 节点参数；可按自己的 DNS 策略调整。`0.0.0.0` 则是本机监听地址。
+
+`settings.ip` 不是 ESP32 的 AP 地址 `192.168.4.1`，也不是 ESP32 的 STA 地址。电脑更换地址后要同步修改它。随后在 ESP32 管理页面填写这台电脑的 IPv4 和实际 SOCKS5 端口（本例为 `7897`）。
 
 本例 `listen: 0.0.0.0` 监听本机所有 IPv4 接口，便于 LAN 接入；也可以改为实际 LAN 地址以限制监听接口。它使用固件要求的 `auth: noauth`、`udp: true`，应通过防火墙仅允许可信 LAN / ESP32 接入，并允许 Xray 返回的 UDP 中继端口，不向公网转发这个入口。
 
@@ -94,7 +98,7 @@ ESP32 送来的普通连接目标通常是 IP。`sniffing` 可从部分 HTTP、T
 
 从 [Xray-core 官方 Releases](https://github.com/XTLS/Xray-core/releases) 获取对应系统的程序。将修改后的 `config.json` 和官方包中的 `geoip.dat`、`geosite.dat` 放在程序目录：本例的 `geoip:`／`geosite:` 规则需要这些分类数据。若 GUI 客户端自动生成配置，应使用其导入／自定义配置入口，避免手动编辑的文件被覆盖。
 
-在**程序目录**先检查，再运行。Windows PowerShell：
+确认 `config.json` 中已没有 `<...>` 占位符后，在**程序目录**先检查，再运行。Windows PowerShell：
 
 ```powershell
 .\xray.exe version
@@ -110,9 +114,9 @@ Linux Bash：
 ./xray run -config ./config.json
 ```
 
-`Configuration OK` 表示内核接受配置，不表示示例节点可联网。启动后，先从 ESP32 的管理页运行连接诊断，核对 SOCKS5 NO AUTH、UDP DNS，再测试普通网页。若需排查，可临时将 `loglevel` 改为 `info`，检查流量实际选择的出口。
+未替换的模板是合法 JSON，但不是有效的 Xray 运行配置：`run -test` 报地址、UUID、公钥或短 ID 格式错误是预期结果，先核对上表。替换后显示 `Configuration OK` 只表示内核接受配置，不保证节点可联网。启动后，先从 ESP32 的管理页运行连接诊断，核对 SOCKS5 NO AUTH、UDP DNS，再测试普通网页。若需排查，可临时将 `loglevel` 改为 `info`，检查流量实际选择的出口。
 
-验证记录：完整模板在 Linux x86_64 的 **Xray 26.1.18、26.3.27** 上通过 `run -test`。功能测试另用临时配置，将监听地址、`proxy` 后端及 `dns.servers` 换为本地端点，验证了 NO AUTH、TCP 网页请求、UDP 回显、DNS A 查询接管和三个出站的路由选择。示例没有真实远端凭据，因此未验证公网 REALITY 握手、实际 DoH 服务、Windows 实机或 ESP32 的实际联网。
+验证记录：在不提交的临时副本中，用本机回环地址、文档保留地址和临时生成的测试值替换占位符，在 Linux x86_64 的 **Xray 26.1.18、26.3.27** 上通过 `run -test`；未替换的模板在两版内核上均被拒绝。功能测试另用临时配置，将监听地址、`proxy` 后端及 `dns.servers` 换为本地端点，验证了 NO AUTH、TCP 网页请求、UDP 回显、DNS A 查询接管和三个出站的路由选择。测试没有使用真实远端凭据，因此未验证公网 REALITY 握手、实际 DoH 服务、Windows 实机或 ESP32 的实际联网。
 
 ## 官方参考
 

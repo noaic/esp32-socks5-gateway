@@ -126,7 +126,7 @@ Example network settings:
 
 Replace these examples with your network's actual settings. The firmware default `192.168.1.2:7897` does not establish that a proxy exists there. Do not enter your computer's `127.0.0.1` as the server address: to the ESP32, that address refers to the ESP32 itself.
 
-If your upstream SOCKS5 service uses [Xray](https://github.com/XTLS/Xray-core), start with the [complete VLESS + TCP + REALITY client example](examples/xray-client-reality.json) and its [field placement and setup guide (Chinese)](examples/README.md). It runs on the LAN computer; replace its LAN address and remote node parameters before use. The existing [SOCKS settings example](examples/xray-socks-settings.json) and DNS examples remain fragments for integration into an existing configuration. Other proxy software can work if it meets the requirements above. Keep an unauthenticated proxy accessible only to trusted networks.
+If your upstream SOCKS5 service uses [Xray](https://github.com/XTLS/Xray-core), start with the [complete VLESS + TCP + REALITY client template](examples/xray-client-reality.json) and its [field placement and setup guide (Chinese)](examples/README.md). It runs on the LAN computer; replace all `<...>` placeholders with your LAN address and remote node parameters before checking or running it. The existing [SOCKS settings example](examples/xray-socks-settings.json) and DNS examples remain fragments for integration into an existing configuration. Other proxy software can work if it meets the requirements above. Keep an unauthenticated proxy accessible only to trusted networks.
 
 ## Install the toolchain and build
 

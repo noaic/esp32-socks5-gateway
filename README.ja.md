@@ -126,7 +126,7 @@ ESP32 の種類、Flash/PSRAM の容量、LED のピンが違う場合、ハー�
 
 これらは説明用の値です。自分のネットワークに合わせて変更してください。既定の `192.168.1.2:7897` に、実際のプロキシが存在するとは限りません。パソコン側の `127.0.0.1` を ESP32 に設定しないでください。ESP32 から見ると、これは ESP32 自身を指します。
 
-上流の SOCKS5 サービスに [Xray](https://github.com/XTLS/Xray-core) を使う場合は、[VLESS + TCP + REALITY の完全なクライアント設定例](examples/xray-client-reality.json)と [フィールドの配置・使用ガイド（中国語）](examples/README.md)から始めてください。LAN 内のパソコンで動作し、使用前に LAN アドレスとリモートノードの値を置き換えます。既存の [SOCKS 設定例](examples/xray-socks-settings.json)と DNS 設定例は、既存設定に組み込むための部分設定です。上記の条件を満たすほかのプロキシソフトも使用できます。認証なしのプロキシは、信頼できるネットワークだけに公開してください。
+上流の SOCKS5 サービスに [Xray](https://github.com/XTLS/Xray-core) を使う場合は、[VLESS + TCP + REALITY の完全なクライアント設定テンプレート](examples/xray-client-reality.json)と [フィールドの配置・使用ガイド（中国語）](examples/README.md)から始めてください。LAN 内のパソコンで動作します。すべての `<...>` プレースホルダーを自分の LAN アドレスとリモートノードの値に置き換えてから、設定の検証と起動を行ってください。既存の [SOCKS 設定例](examples/xray-socks-settings.json)と DNS 設定例は、既存設定に組み込むための部分設定です。上記の条件を満たすほかのプロキシソフトも使用できます。認証なしのプロキシは、信頼できるネットワークだけに公開してください。
 
 ## 開発ツールのインストールとビルド
 
