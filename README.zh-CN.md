@@ -146,16 +146,18 @@ Windows 使用 **PowerShell**，Linux / WSL2 使用 **Bash**；请只执行对�
 #### Windows 11：官方 EIM 与 PowerShell
 
 1. 从 [乐鑫官方页面](https://dl.espressif.com/dl/eim/) 下载 EIM 图形安装器。按 [Windows 官方安装说明](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/get-started/windows-setup.html)完成依赖检查；若 Git 尚未可用，先安装 [Git for Windows](https://git-scm.com/install/windows)，再打开新的 PowerShell。无需使用 `winget`。
-2. 在普通 PowerShell 中将指定提交放入**尚不存在的** `C:\esp\esp-idf-gateway`。局部禁用 CRLF 转换，保证源码与补丁的哈希一致，不改全局 Git 设置：
+2. 在普通 PowerShell 中将指定提交放入**尚不存在的** `C:\esp\esp-idf-gateway`。在 SDK 及其子模块中设置 `core.autocrlf=false` 和 `core.eol=lf`，固定为 LF，保证源码与补丁的哈希一致；仅设置前者并不足够，因为 lwIP 的 `.gitattributes` 将 C 文件标记为 `text`，还会受系统默认换行影响。这不改全局 Git 设置：
 
 ```powershell
 git --version
 New-Item -ItemType Directory -Force C:\esp | Out-Null
-git clone -c core.autocrlf=false --no-checkout --depth 1 https://github.com/espressif/esp-idf.git C:\esp\esp-idf-gateway
+git clone -c core.autocrlf=false -c core.eol=lf --no-checkout --depth 1 https://github.com/espressif/esp-idf.git C:\esp\esp-idf-gateway
 Set-Location C:\esp\esp-idf-gateway
 git fetch --depth 1 origin fff9895c82d744c7237be8847347bdd1b07c6643
 git checkout --detach fff9895c82d744c7237be8847347bdd1b07c6643
-git -c core.autocrlf=false submodule update --init --recursive --depth 1
+git -c core.autocrlf=false -c core.eol=lf submodule update --init --recursive --depth 1
+git submodule foreach --recursive "git config core.autocrlf false"
+git submodule foreach --recursive "git config core.eol lf"
 ```
 
 3. 在 EIM 中选择 **Custom Installation**，将路径指向这个现有的 Git 目录。官方 [Expert Installation](https://docs.espressif.com/projects/idf-im-ui/en/latest/expert_installation.html)支持使用已有仓库而不改写其内容。安装该检出的工具链、CMake、Ninja 和 Python 环境；使用此目录，不要另外安装“最新版本”后直接用它构建。
@@ -166,11 +168,12 @@ python --version
 idf.py --version
 git -C "$env:IDF_PATH" rev-parse HEAD
 git -C "$env:IDF_PATH\components\lwip\lwip" rev-parse HEAD
+git -C "$env:IDF_PATH\components\lwip\lwip" ls-files --eol src/core/ipv4/ip4.c
 cmake --version
 ninja --version
 ```
 
-两个 Git 输出须与表中提交一致。EIM 使用其生成的激活入口；若采用官方传统脚本安装，在该 SDK 目录中，PowerShell 安装用 `.\install.ps1 esp32s3`，激活用 `.\export.ps1`，CMD 对应 `install.bat esp32s3` / `export.bat`。Windows 不使用 Bash 的 `source`。
+两个提交输出须与表中一致，换行检查须为 `i/lf w/lf`。`i/lf w/crlf` 表示磁盘源码被转换为 CRLF，即使 HEAD 正确、Git 状态干净也会触发文件哈希错误。改变 Git 配置不会自动重写已有文件；已有 CRLF 检出需先备份，再按 LF 设置重新检出。EIM 使用其生成的激活入口；传统脚本安装在该 SDK 目录中，PowerShell 安装用 `.\install.ps1 esp32s3`，激活用 `.\export.ps1`，CMD 对应 `install.bat esp32s3` / `export.bat`。Windows 不使用 Bash 的 `source`。
 
 #### Linux：Ubuntu/Debian 或 Fedora，Bash
 
@@ -193,11 +196,13 @@ sudo dnf install git wget flex bison gperf python3 python3-pip cmake ninja-build
 mkdir -p ~/esp
 cd ~/esp
 
-git clone -c core.autocrlf=false --no-checkout --depth 1 https://github.com/espressif/esp-idf.git esp-idf-gateway
+git clone -c core.autocrlf=false -c core.eol=lf --no-checkout --depth 1 https://github.com/espressif/esp-idf.git esp-idf-gateway
 cd esp-idf-gateway
 git fetch --depth 1 origin fff9895c82d744c7237be8847347bdd1b07c6643
 git checkout --detach fff9895c82d744c7237be8847347bdd1b07c6643
-git -c core.autocrlf=false submodule update --init --recursive --depth 1
+git -c core.autocrlf=false -c core.eol=lf submodule update --init --recursive --depth 1
+git submodule foreach --recursive "git config core.autocrlf false"
+git submodule foreach --recursive "git config core.eol lf"
 
 ./install.sh esp32s3
 python3 tools/idf_tools.py install cmake ninja
@@ -228,7 +233,7 @@ WSL2 应在 Linux 发行版内执行 Linux 安装步骤，不能直接复用 Win
 Windows 已激活的 PowerShell：
 
 ```powershell
-git clone -c core.autocrlf=false https://github.com/noaic/esp32-socks5-gateway.git C:\esp\esp32-socks5-gateway
+git clone -c core.autocrlf=false -c core.eol=lf https://github.com/noaic/esp32-socks5-gateway.git C:\esp\esp32-socks5-gateway
 Set-Location C:\esp\esp32-socks5-gateway
 python tools/prepare_lwip.py apply
 python tools/prepare_lwip.py check
@@ -237,7 +242,7 @@ python tools/prepare_lwip.py check
 Linux / WSL2 已激活的 Bash：
 
 ```bash
-git clone -c core.autocrlf=false https://github.com/noaic/esp32-socks5-gateway.git ~/esp32-socks5-gateway
+git clone -c core.autocrlf=false -c core.eol=lf https://github.com/noaic/esp32-socks5-gateway.git ~/esp32-socks5-gateway
 cd ~/esp32-socks5-gateway
 python3 tools/prepare_lwip.py apply
 python3 tools/prepare_lwip.py check

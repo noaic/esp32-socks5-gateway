@@ -146,16 +146,18 @@ Windows は **PowerShell**、Linux / WSL2 は **Bash** を使います。自分�
 #### Windows 11：公式 EIM と PowerShell
 
 1. [Espressif の公式ページ](https://dl.espressif.com/dl/eim/)から EIM の GUI インストーラーを取得します。[Windows 公式ガイド](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/get-started/windows-setup.html)の前提条件チェックを行い、Git が使えなければ [Git for Windows](https://git-scm.com/install/windows)を入れて新しい PowerShell を開いてください。`winget` は必須ではありません。
-2. 通常の PowerShell で、**まだ存在しない** `C:\esp\esp-idf-gateway` に指定コミットを取得します。CRLF 変換をこのリポジトリで無効にし、ソースとパッチのハッシュを維持します。Git の全体設定は変更しません。
+2. 通常の PowerShell で、**まだ存在しない** `C:\esp\esp-idf-gateway` に指定コミットを取得します。SDK とサブモジュールで `core.autocrlf=false` と `core.eol=lf` の両方を設定し、LF とハッシュを維持します。lwIP の `.gitattributes` は C ファイルを `text` として扱うため、前者だけでは OS の既定改行の影響が残ります。Git の全体設定は変更しません。
 
 ```powershell
 git --version
 New-Item -ItemType Directory -Force C:\esp | Out-Null
-git clone -c core.autocrlf=false --no-checkout --depth 1 https://github.com/espressif/esp-idf.git C:\esp\esp-idf-gateway
+git clone -c core.autocrlf=false -c core.eol=lf --no-checkout --depth 1 https://github.com/espressif/esp-idf.git C:\esp\esp-idf-gateway
 Set-Location C:\esp\esp-idf-gateway
 git fetch --depth 1 origin fff9895c82d744c7237be8847347bdd1b07c6643
 git checkout --detach fff9895c82d744c7237be8847347bdd1b07c6643
-git -c core.autocrlf=false submodule update --init --recursive --depth 1
+git -c core.autocrlf=false -c core.eol=lf submodule update --init --recursive --depth 1
+git submodule foreach --recursive "git config core.autocrlf false"
+git submodule foreach --recursive "git config core.eol lf"
 ```
 
 3. EIM の **Custom Installation** で、この既存 Git ディレクトリを指定します。公式の [Expert Installation](https://docs.espressif.com/projects/idf-im-ui/en/latest/expert_installation.html)は既存リポジトリを変更せずに利用できます。このチェックアウトに対応するコンパイラー、CMake、Ninja、Python 環境を準備してください。別の最新 SDK をそのまま使う方法ではありません。
@@ -166,11 +168,12 @@ python --version
 idf.py --version
 git -C "$env:IDF_PATH" rev-parse HEAD
 git -C "$env:IDF_PATH\components\lwip\lwip" rev-parse HEAD
+git -C "$env:IDF_PATH\components\lwip\lwip" ls-files --eol src/core/ipv4/ip4.c
 cmake --version
 ninja --version
 ```
 
-2 つの Git 出力が表と一致することを確認してください。EIM は生成された入口で有効化します。公式の従来スクリプト方式なら、その SDK ディレクトリ内の PowerShell で `.\install.ps1 esp32s3` により導入し、`.\export.ps1` で有効化します。CMD は `install.bat esp32s3` / `export.bat` です。Windows で Bash の `source` は使いません。
+両コミットが表と一致し、改行が `i/lf w/lf` であることを確認してください。`i/lf w/crlf` は実ファイルが CRLF で、HEAD が正しく Git 状態が正常でもハッシュが一致しません。設定変更だけでは既存ファイルを書き直さないため、CRLF の場合はバックアップ後に LF 設定で取得し直します。EIM は生成された入口で有効化し、従来方式なら SDK 内の PowerShell で `.\install.ps1 esp32s3` / `.\export.ps1`、CMD で `install.bat esp32s3` / `export.bat` を使います。Windows で Bash の `source` は使いません。
 
 #### Linux：Ubuntu/Debian または Fedora、Bash
 
@@ -193,11 +196,13 @@ SDK を別ディレクトリに準備します。`esp-idf-gateway` はまだ存�
 mkdir -p ~/esp
 cd ~/esp
 
-git clone -c core.autocrlf=false --no-checkout --depth 1 https://github.com/espressif/esp-idf.git esp-idf-gateway
+git clone -c core.autocrlf=false -c core.eol=lf --no-checkout --depth 1 https://github.com/espressif/esp-idf.git esp-idf-gateway
 cd esp-idf-gateway
 git fetch --depth 1 origin fff9895c82d744c7237be8847347bdd1b07c6643
 git checkout --detach fff9895c82d744c7237be8847347bdd1b07c6643
-git -c core.autocrlf=false submodule update --init --recursive --depth 1
+git -c core.autocrlf=false -c core.eol=lf submodule update --init --recursive --depth 1
+git submodule foreach --recursive "git config core.autocrlf false"
+git submodule foreach --recursive "git config core.eol lf"
 
 ./install.sh esp32s3
 python3 tools/idf_tools.py install cmake ninja
@@ -228,7 +233,7 @@ WSL2 は Linux ディストリビューション内で Linux の手順を実行�
 Windows の有効化済み PowerShell：
 
 ```powershell
-git clone -c core.autocrlf=false https://github.com/noaic/esp32-socks5-gateway.git C:\esp\esp32-socks5-gateway
+git clone -c core.autocrlf=false -c core.eol=lf https://github.com/noaic/esp32-socks5-gateway.git C:\esp\esp32-socks5-gateway
 Set-Location C:\esp\esp32-socks5-gateway
 python tools/prepare_lwip.py apply
 python tools/prepare_lwip.py check
@@ -237,7 +242,7 @@ python tools/prepare_lwip.py check
 Linux / WSL2 の有効化済み Bash：
 
 ```bash
-git clone -c core.autocrlf=false https://github.com/noaic/esp32-socks5-gateway.git ~/esp32-socks5-gateway
+git clone -c core.autocrlf=false -c core.eol=lf https://github.com/noaic/esp32-socks5-gateway.git ~/esp32-socks5-gateway
 cd ~/esp32-socks5-gateway
 python3 tools/prepare_lwip.py apply
 python3 tools/prepare_lwip.py check

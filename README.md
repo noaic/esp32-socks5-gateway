@@ -146,16 +146,18 @@ Transparent forwarding uses a small lwIP patch. lwIP is the TCP/IP networking li
 #### Windows 11: official EIM and PowerShell
 
 1. Download the EIM GUI installer from [Espressif](https://dl.espressif.com/dl/eim/). Follow the prerequisite checks in the [official Windows guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/get-started/windows-setup.html). If Git is unavailable, install [Git for Windows](https://git-scm.com/install/windows) and open a new PowerShell. `winget` is not required.
-2. In ordinary PowerShell, put the exact commit in a **new** `C:\esp\esp-idf-gateway` directory. Disable CRLF conversion locally to preserve source/patch hashes, without changing global Git settings:
+2. In ordinary PowerShell, put the exact commit in a **new** `C:\esp\esp-idf-gateway` directory. Set both `core.autocrlf=false` and `core.eol=lf` in the SDK and its submodules to preserve LF bytes and source/patch hashes. The first setting alone is insufficient: lwIP's `.gitattributes` marks C files as `text`, so native line endings still matter. Global Git settings are unchanged:
 
 ```powershell
 git --version
 New-Item -ItemType Directory -Force C:\esp | Out-Null
-git clone -c core.autocrlf=false --no-checkout --depth 1 https://github.com/espressif/esp-idf.git C:\esp\esp-idf-gateway
+git clone -c core.autocrlf=false -c core.eol=lf --no-checkout --depth 1 https://github.com/espressif/esp-idf.git C:\esp\esp-idf-gateway
 Set-Location C:\esp\esp-idf-gateway
 git fetch --depth 1 origin fff9895c82d744c7237be8847347bdd1b07c6643
 git checkout --detach fff9895c82d744c7237be8847347bdd1b07c6643
-git -c core.autocrlf=false submodule update --init --recursive --depth 1
+git -c core.autocrlf=false -c core.eol=lf submodule update --init --recursive --depth 1
+git submodule foreach --recursive "git config core.autocrlf false"
+git submodule foreach --recursive "git config core.eol lf"
 ```
 
 3. In EIM, choose **Custom Installation** and point its path to this existing Git directory. Official [Expert Installation](https://docs.espressif.com/projects/idf-im-ui/en/latest/expert_installation.html) supports using an existing repository without rewriting its contents. Install the tools for that checkout, including the compiler, CMake, Ninja, and Python environment. Use this directory rather than installing an arbitrary latest SDK for the build.
@@ -166,11 +168,12 @@ python --version
 idf.py --version
 git -C "$env:IDF_PATH" rev-parse HEAD
 git -C "$env:IDF_PATH\components\lwip\lwip" rev-parse HEAD
+git -C "$env:IDF_PATH\components\lwip\lwip" ls-files --eol src/core/ipv4/ip4.c
 cmake --version
 ninja --version
 ```
 
-Both Git results must match the table. Use EIM's generated activation entry point for EIM. For an official legacy script installation, run `.\install.ps1 esp32s3` to install and `.\export.ps1` to activate from that SDK directory in PowerShell; CMD uses `install.bat esp32s3` / `export.bat`. Windows does not use Bash's `source`.
+Both commits must match the table, and the EOL check must show `i/lf w/lf`. `i/lf w/crlf` means the working file uses CRLF, which fails the byte hash even with correct HEADs and clean Git status. Changing configuration does not rewrite existing files; back up an existing CRLF checkout before recreating it with LF settings. Use EIM's generated activation entry point. For legacy script installs, PowerShell runs `.\install.ps1 esp32s3` and `.\export.ps1` from the SDK directory; CMD uses `install.bat esp32s3` / `export.bat`. Windows does not use Bash's `source`.
 
 #### Linux: Ubuntu/Debian or Fedora, Bash
 
@@ -193,11 +196,13 @@ Prepare a separate SDK directory; `esp-idf-gateway` must not already exist:
 mkdir -p ~/esp
 cd ~/esp
 
-git clone -c core.autocrlf=false --no-checkout --depth 1 https://github.com/espressif/esp-idf.git esp-idf-gateway
+git clone -c core.autocrlf=false -c core.eol=lf --no-checkout --depth 1 https://github.com/espressif/esp-idf.git esp-idf-gateway
 cd esp-idf-gateway
 git fetch --depth 1 origin fff9895c82d744c7237be8847347bdd1b07c6643
 git checkout --detach fff9895c82d744c7237be8847347bdd1b07c6643
-git -c core.autocrlf=false submodule update --init --recursive --depth 1
+git -c core.autocrlf=false -c core.eol=lf submodule update --init --recursive --depth 1
+git submodule foreach --recursive "git config core.autocrlf false"
+git submodule foreach --recursive "git config core.eol lf"
 
 ./install.sh esp32s3
 python3 tools/idf_tools.py install cmake ninja
@@ -228,7 +233,7 @@ For WSL2, install inside the Linux distribution using the Linux steps; Windows c
 Windows, in activated PowerShell:
 
 ```powershell
-git clone -c core.autocrlf=false https://github.com/noaic/esp32-socks5-gateway.git C:\esp\esp32-socks5-gateway
+git clone -c core.autocrlf=false -c core.eol=lf https://github.com/noaic/esp32-socks5-gateway.git C:\esp\esp32-socks5-gateway
 Set-Location C:\esp\esp32-socks5-gateway
 python tools/prepare_lwip.py apply
 python tools/prepare_lwip.py check
@@ -237,7 +242,7 @@ python tools/prepare_lwip.py check
 Linux/WSL2, in activated Bash:
 
 ```bash
-git clone -c core.autocrlf=false https://github.com/noaic/esp32-socks5-gateway.git ~/esp32-socks5-gateway
+git clone -c core.autocrlf=false -c core.eol=lf https://github.com/noaic/esp32-socks5-gateway.git ~/esp32-socks5-gateway
 cd ~/esp32-socks5-gateway
 python3 tools/prepare_lwip.py apply
 python3 tools/prepare_lwip.py check
