@@ -11,6 +11,7 @@ This is an experimental project for learning ESP32 networking and small-scale us
 ## Reading guide
 
 - [Understand the connection](#understand-the-connection)
+- [Performance and suitable uses](#performance-and-suitable-uses)
 - [Prepare hardware and software](#prepare-hardware-and-software)
 - [Prepare the upstream SOCKS5 service](#prepare-the-upstream-socks5-service)
 - [Install the toolchain and build](#install-the-toolchain-and-build)
@@ -46,6 +47,32 @@ The ESP32 performs two Wi-Fi roles at the same time:
 **This project provides the gateway firmware; you must provide the SOCKS5 service separately.** It can run on a LAN computer or another host reachable by the ESP32. It does not have to run on your router.
 
 The management page runs on the ESP32. You can connect to its AP and configure it even before upstream Wi-Fi is set up.
+
+## Performance and suitable uses
+
+These **historical measurements on an ESP32-S3 N16R8 board** show the throughput range to expect when assessing this project. Download means data reaching the client connected to the ESP32; upload means data sent by that client to the test service. The directions were measured separately, not saturated simultaneously.
+
+| Scenario | Download Mbps | Upload Mbps |
+| --- | ---: | ---: |
+| One client, one stream | 16.43 | 16.25 |
+| One client, four concurrent streams, aggregate | 24.49 | 21.25 |
+| Two clients: A idle, B running a one-stream test | 14.21 | 11.97 |
+| Two clients: A playing 1080P video, B running a one-stream test | 14.41 | 11.83 |
+
+Tests used Android clients and a LAN test service, reporting the median of three completed rounds per scenario with detailed development diagnostics disabled. Only the last two rows are a same-session comparison: no video stalls were reported on A, and B's results were close to those with A idle. The first two rows come from a different historical test and do not establish a later version's improvement or regression. See [performance and validation](docs/performance.md) for the records.
+
+**Mbps means megabits per second; MB/s means megabytes per second. Divide by about 8 to convert.** Around 16 Mbps for one stream is about 2 MB/s. Around 24 Mbps for four streams is their combined throughput, not 24 Mbps per stream or per client.
+
+| Capacity | Current limit | Meaning |
+| --- | ---: | --- |
+| Wi-Fi clients | 2 | Can be configured to allow only 1 |
+| Active TCP relays | 64 | Shared by both clients, not 64 each |
+| UDP flows | 32 | Forwarding state for separate traffic flows, shared by both clients |
+| TCP mapping records | 512 | Also retain closing-state information; not 512 active connections |
+
+Suitable uses include browsing, light transfers, and networking experiments with a small number of devices. The video test supports sharing under those particular conditions, but video buffering and unknown bitrate mean it cannot guarantee smooth playback for all 1080P video. For transfers approaching 100 Mbps, many clients, or several simultaneous high-bitrate streams, choose hardware with greater throughput and capacity.
+
+These are short LAN tests, not public-Internet speed guarantees. Both clients and AP/STA share a single 2.4 GHz radio; adding clients does not double bandwidth. Signal, interference, upstream proxy, destination service, and connection count affect results. Cloud builds and host regressions validate tools and implementation, but cannot replace real radio throughput tests.
 
 ## Prepare hardware and software
 
@@ -342,7 +369,48 @@ Think of the ESP32 as an intermediary that receives and passes on data:
 
 Total capacity is 64 active TCP relays and 32 UDP flows. There are also 512 TCP mapping records for destinations and closing-state information; **this does not mean 512 simultaneous forwarded TCP connections**. lwIP handles underlying TCP behavior, such as retransmission, while fixed application loops service multiple connections.
 
-See [architecture](docs/architecture.md) for the detailed packet path and module responsibilities. You do not need to learn all internals before using the gateway.
+### Follow one webpage's TCP connection
+
+Suppose a phone connects to a website at `203.0.113.10:443`; this address is just an example:
+
+1. The phone sends packets to its default gateway, the ESP32.
+2. The project-local lwIP patch calls gateway code from the IPv4 processing path. It validates the packet, records the client and original destination, redirects the TCP packet to a local ESP32 listener, and updates checksums so the receiver can validate the packet.
+3. lwIP handles this local TCP connection. The application reads data through a socket, a programming interface for sending/receiving network data, rather than implementing TCP handshakes and retransmission itself.
+4. The TCP forwarding loop negotiates SOCKS5 NO AUTH and sends `CONNECT`, asking the proxy to connect to the original destination. It then passes data between the two connections.
+5. TCP packets returning to the phone use the mapping to restore the original remote address and correct their checksums. The phone still sees a connection to the website.
+
+```mermaid
+flowchart LR
+    Client["Phone's TCP packets"] --> Hook["IPv4 hooks<br/>Record destination and rewrite addresses"]
+    Hook --> Stack["Local lwIP connection"]
+    Stack --> Relay["TCP forwarding loop"]
+    Relay -->|SOCKS5 CONNECT| Proxy["Upstream proxy"]
+    Proxy --> Site["Original website"]
+```
+
+“Transparent” describes the client's experience. Raw TCP packets are not simply inserted into SOCKS5; lwIP handles the connection, and the gateway forwards its data. HTTPS encryption remains between browser and website; the gateway does not decrypt webpage content.
+
+### UDP, concurrency, and saved settings
+
+UDP has no TCP-style connection setup, but SOCKS5 UDP forwarding still needs a TCP control connection. Each UDP flow records its client/destination, negotiates `UDP ASSOCIATE`, and sends UDP data with a SOCKS5 destination header to the relay. Replies are checked against the flow and client identity before delivery. The code reserves some capacity and negotiation opportunities for DNS, reducing cases where other UDP traffic prevents name resolution by exhausting resources.
+
+TCP and UDP each use a fixed forwarding loop: check which connections can send/receive, handle a portion of data, then service others. There is no task per connection. Queues and wait times are bounded; larger TCP data buffers use PSRAM, while frequently accessed TCP state stays in internal RAM. This controls memory use without removing radio or total connection limits.
+
+Configuration management stores current and previous settings. New network settings are tried first, kept after confirmation, or rolled back on timeout. Management/maintenance tasks are separate from forwarding loops, so viewing status does not restart the proxy for each page request. Each client has a connection identity and counters to identify reply ownership and clean up connections when it leaves.
+
+To explore the source, start with the matching modules:
+
+| Topic | Main source files |
+| --- | --- |
+| Startup, AP/STA, and network events | [app_main.c](main/app_main.c) |
+| TCP input, address rewriting, and destination records | [tcp_poc.c](main/tcp_poc.c), [packet_rewrite.c](main/packet_rewrite.c), [flow_table.c](main/flow_table.c) |
+| TCP SOCKS5 negotiation and bidirectional forwarding | [socks_relay.c](main/socks_relay.c) |
+| UDP interception, association, and packet format | [udp_gateway.c](main/udp_gateway.c), [udp_relay.c](main/udp_relay.c), [socks_udp.c](main/socks_udp.c) |
+| Client ownership and counters | [ap_clients.c](main/ap_clients.c) |
+| Settings, confirmation, and rollback | [gateway_settings.c](main/gateway_settings.c), [web_management.c](main/web_management.c) |
+| Maintenance jobs and connectivity checks | [gateway_control.c](main/gateway_control.c), [gateway_probe.c](main/gateway_probe.c) |
+
+See [architecture](docs/architecture.md) for the complete packet path and module responsibilities. For a first setup, learn the configuration steps first and explore the implementation when useful.
 
 ### Run the existing regression tests
 
@@ -375,7 +443,7 @@ The ESP-IDF Python environment includes pyserial/esptool, which the UART tests n
 
 - [Documentation index](docs/README.md)
 - [Maintenance and recovery](docs/maintenance.md)
-- [Performance and validation](docs/performance.md): historical local download measurements were about 16 Mbps for one stream and 24 Mbps total for four streams. Mbps means megabits per second, not MB/s. Devices, upstream services, and radio conditions affect results; these are not speed guarantees.
+- [Performance and validation](docs/performance.md): full measurement records, memory samples, and validation limits.
 - [Development history](docs/history/README.md): includes experiments that were later reverted. For everyday behavior, prefer this README and the top-level guides in `docs/`.
 
 `sdkconfig`, `build/`, `managed_components/`, the local lwIP copy, and test outputs are generated. Check `git status` before committing; keep Wi-Fi passwords, personal configuration, logs, and local firmware artifacts out of the repository.
