@@ -1,6 +1,7 @@
 #include "web_management.h"
 #include "gateway_settings.h"
 #include "management_request.h"
+#include "management_http.h"
 #include "ap_clients.h"
 #include "net_diagnostics.h"
 #include "socks_relay.h"
@@ -101,14 +102,13 @@ static esp_err_t update_authorization(void)
 }
 static esp_err_t ap_session(httpd_handle_t handle,int fd)
 {
-    (void)handle;
     struct sockaddr_in local,peer; socklen_t len=sizeof(local);
     if (getsockname(fd,(struct sockaddr *)&local,&len) || local.sin_family!=AF_INET ||
         local.sin_addr.s_addr!=ap_address.ip.addr) return ESP_FAIL;
     len=sizeof(peer);
     if (getpeername(fd,(struct sockaddr *)&peer,&len) || peer.sin_family!=AF_INET ||
         (peer.sin_addr.s_addr&ap_address.netmask.addr)!=(ap_address.ip.addr&ap_address.netmask.addr)) return ESP_FAIL;
-    return ESP_OK;
+    return management_http_open(handle,fd);
 }
 static esp_err_t send_json(httpd_req_t *req,cJSON *root)
 {
@@ -148,6 +148,7 @@ static esp_err_t events_api(httpd_req_t *req)
         const gateway_event_t *e=&event_scratch[i];cJSON *item=cJSON_CreateObject();
         if(!item){cJSON_Delete(root);return send_json(req,NULL);}cJSON_AddItemToArray(array,item);
         cJSON_AddStringToObject(item,"event",gateway_event_name(e->kind));
+        cJSON_AddStringToObject(item,"event_code",gateway_event_code(e->kind));
         cJSON_AddNumberToObject(item,"sequence",e->sequence);
         cJSON_AddNumberToObject(item,"first_ms",(double)e->first_ms);
         cJSON_AddNumberToObject(item,"last_ms",(double)e->last_ms);
@@ -344,7 +345,7 @@ static cJSON *body(httpd_req_t *req)
     int64_t deadline=esp_timer_get_time()+3000000;
     while (used<req->content_len) {
         if (esp_timer_get_time()>=deadline) return NULL;
-        int n=httpd_req_recv(req,buffer+used,req->content_len-used);
+        int n=management_http_recv(req,buffer+used,req->content_len-used);
         if (n<=0) return NULL;
         used+=n;
     }
@@ -458,6 +459,21 @@ static esp_err_t kick(httpd_req_t *req)
     }
     return reply(req,"409 Conflict",API_ERROR("CLIENT_CHANGED", "客户端已经离线或重连，请刷新"));
 }
+static esp_err_t managed_request(httpd_req_t *req)
+{
+    const httpd_uri_t *route=req->user_ctx;
+    management_http_begin(req);
+    esp_err_t result=req->content_len>BODY_MAX?
+        reply(req,"413 Payload Too Large",API_ERROR("INVALID_JSON", "JSON 无效或超过 1024 字节")):
+        route->handler(req);
+    return management_http_finish(req,result);
+}
+static esp_err_t missing_route(httpd_req_t *req,httpd_err_code_t error)
+{
+    /* Unregistered routes also close rather than retain a receive deadline. */
+    httpd_resp_send_err(req,error,NULL);
+    return ESP_FAIL;
+}
 esp_err_t web_management_start(esp_netif_t *ap,esp_netif_t *sta)
 {
     boot_id=esp_random();
@@ -471,10 +487,10 @@ esp_err_t web_management_start(esp_netif_t *ap,esp_netif_t *sta)
     cfg.max_open_sockets=2; cfg.lru_purge_enable=true;
     cfg.recv_wait_timeout=cfg.send_wait_timeout=3;
     cfg.max_req_hdr_len=1024; cfg.max_uri_handlers=10;
-    cfg.if_name=&ap_interface; cfg.open_fn=ap_session;
+    cfg.if_name=&ap_interface; cfg.open_fn=ap_session;cfg.close_fn=management_http_close;
     size_t before=heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);
     err=httpd_start(&server,&cfg); if (err!=ESP_OK) return err;
-    const httpd_uri_t routes[]={
+    static const httpd_uri_t routes[]={
         {.uri="/",.method=HTTP_GET,.handler=page},
         {.uri="/api/setup",.method=HTTP_POST,.handler=first_setup},
         {.uri="/api/events",.method=HTTP_GET,.handler=events_api},
@@ -487,8 +503,11 @@ esp_err_t web_management_start(esp_netif_t *ap,esp_netif_t *sta)
         {.uri="/api/kick",.method=HTTP_POST,.handler=kick},
     };
     for (unsigned i=0;i<sizeof(routes)/sizeof(routes[0]);i++) {
-        err=httpd_register_uri_handler(server,&routes[i]); if (err!=ESP_OK) break;
+        httpd_uri_t route=routes[i];route.handler=managed_request;route.user_ctx=(void *)&routes[i];
+        err=httpd_register_uri_handler(server,&route); if (err!=ESP_OK) break;
     }
+    if(err==ESP_OK)err=httpd_register_err_handler(server,HTTPD_404_NOT_FOUND,missing_route);
+    if(err==ESP_OK)err=httpd_register_err_handler(server,HTTPD_405_METHOD_NOT_ALLOWED,missing_route);
     if (err==ESP_OK) {
         const esp_timer_create_args_t args={.callback=timer_tick,.name="web_control"};
         err=esp_timer_create(&args,&timer);

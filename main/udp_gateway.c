@@ -136,7 +136,7 @@ static void deliver(void *arg)
                 bool resolved=etharp_find_addr(ap,&client,&mac,&ip)>=0;
                 net_diagnostics_udp_mem(before,resolved);
             }
-            if (result==ERR_OK) { gateway_udp_reply(m->tuple.dst_port==53); count_diag(UDP_DELIVERED); proxy_client_traffic(m->client_token,true,false,1); }
+            if (result==ERR_OK) { gateway_udp_reply(m->tuple.dst_port==53); count_diag(UDP_DELIVERED); proxy_client_traffic(m->client_token,true,false,m->tuple.payload_length); }
             else output_error(result);
         } else {
             count_diag(!p?UDP_OUTPUT_ALLOC:!netif_is_up(ap)?UDP_OUTPUT_DOWN:UDP_OUTPUT_OTHER);
@@ -213,8 +213,8 @@ static void stats(void *ctx,const udp_relay_stats_t *s)
 static bool client_current(void *ctx,uint32_t token) { (void)ctx; return proxy_client_current(token); }
 static bool client_acquire(void *ctx,uint32_t token,bool dns) { (void)ctx; return proxy_client_acquire(token,true,dns); }
 static void client_release(void *ctx,uint32_t token,bool dns) { (void)ctx; proxy_client_release(token,true,dns); }
-static void client_traffic(void *ctx,uint32_t token,bool upload)
-{ (void)ctx; if (upload) proxy_client_traffic(token,true,true,1); }
+static void client_traffic(void *ctx,uint32_t token,bool upload,size_t bytes)
+{ (void)ctx; if (upload) proxy_client_traffic(token,true,true,bytes); }
 static void association_error(void *ctx,int code) { (void)ctx;gateway_event(GW_UDP_ERROR,code); }
 static void loop(void *arg)
 {

@@ -2,6 +2,9 @@
 #include <string.h>
 _Static_assert(PROXY_MAX_TCP_MAPPINGS < 32768, "int16 index range");
 _Static_assert(PROXY_FLOW_PORT_BASE + PROXY_MAX_TCP_MAPPINGS <= 65536, "port range");
+_Static_assert(PROXY_AP_MAX_CLIENTS==2,"client token low bit selects a slot");
+_Static_assert(PROXY_CLIENT_TCP_MAPPINGS*PROXY_AP_MAX_CLIENTS<=PROXY_MAX_TCP_MAPPINGS,"protected metadata capacity");
+static bool pending(const flow_t *f) { return !f->socket_open && !f->retired; }
 static unsigned bucket(uint32_t client, uint16_t cp, uint32_t remote, uint16_t rp)
 {
     uint32_t x = client ^ (remote * 2654435761u) ^ ((uint32_t)cp << 16) ^ rp;
@@ -31,6 +34,10 @@ int flow_table_input_owned(flow_table_t *t, const proxy_tcp_packet_t *p,
         found=f->next;
     }
     if (found<0 && (p->flags & 0x17)==0x02 && t->used<PROXY_MAX_TCP_MAPPINGS) {
+        /* Include old tokens of the same slot: reconnect cannot bypass the
+         * quota, and no live/TIME_WAIT record is evicted or reused early. */
+        if(token && (t->owned[token&1]>=PROXY_CLIENT_TCP_MAPPINGS ||
+                     t->pending[token&1]>=PROXY_CLIENT_TCP_PENDING)) return -1;
         for (unsigned n=0; n<PROXY_MAX_TCP_MAPPINGS; n++) {
             unsigned i=(t->cursor+n)%PROXY_MAX_TCP_MAPPINGS;
             if (!t->flows[i].used) { found=i; t->cursor=(i+1)%PROXY_MAX_TCP_MAPPINGS; break; }
@@ -40,6 +47,7 @@ int flow_table_input_owned(flow_table_t *t, const proxy_tcp_packet_t *p,
                 .client_port=p->src_port,.remote_port=p->dst_port,
                 .local_peer_port=PROXY_FLOW_PORT_BASE+found,.next=t->heads[b]};
             t->heads[b]=found; t->used++; *created=true;
+            if(token){t->owned[token&1]++;t->pending[token&1]++;}
         }
     }
     if (found>=0) {
@@ -65,7 +73,22 @@ unsigned flow_table_expire(flow_table_t *t, int64_t now, int64_t guard)
         int16_t *link=&t->heads[b];
         while (*link>=0 && *link!=(int)i) link=&t->flows[*link].next;
         if (*link>=0) *link=f->next;
+        if(f->client_token){unsigned slot=f->client_token&1;t->owned[slot]--;if(pending(f))t->pending[slot]--;}
         memset(f,0,sizeof(*f)); t->used--; expired++;
     }
     return expired;
+}
+bool flow_table_claim(flow_table_t *t,int index,flow_t *snapshot)
+{
+    if(index<0 || index>=PROXY_MAX_TCP_MAPPINGS)return false;
+    flow_t *f=&t->flows[index];if(!f->used || f->socket_open)return false;
+    if(f->client_token && pending(f))t->pending[f->client_token&1]--;
+    f->socket_open=true;f->retired=false;*snapshot=*f;return true;
+}
+void flow_table_retire(flow_table_t *t,int index,int64_t now)
+{
+    if(index<0 || index>=PROXY_MAX_TCP_MAPPINGS || !t->flows[index].used)return;
+    flow_t *f=&t->flows[index];
+    if(f->client_token && pending(f))t->pending[f->client_token&1]--;
+    f->socket_open=false;f->retired=true;f->retired_us=f->touched_us=now;
 }

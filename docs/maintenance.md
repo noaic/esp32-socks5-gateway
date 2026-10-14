@@ -8,7 +8,11 @@ Choose a different AP third octet when the upstream network overlaps `192.168.X.
 
 UART runs at 115200 baud. `status` is a current state/resource snapshot; `events` is a bounded history of significant events; `log` controls live diagnostic output. The everyday log level is WARN. Use INFO temporarily and return to WARN afterward. Full text logs are not stored in Flash.
 
+The firmware displays `gateway> ` and echoes accepted ASCII characters. Backspace/Delete removes the last character; Enter submits once, including CRLF. Do not type the prompt itself. Disable terminal local echo to avoid duplicate characters; use `log warn`/`log off` if logs interrupt the input line. Input is bounded to 95 bytes, with one nonempty command per second and no arrow-key/history editing.
+
 The LED's green Internet state only describes the recent DNS/HTTP check target. An accepted maintenance task is not proof of restored Internet connectivity. Web operation results match task IDs; restart completion matches a changed boot identifier. A missing response does not cause an automatic repeat POST. The page stops waiting after 90 seconds and offers the new address when the subnet changes.
+
+Status refresh preserves unsaved Internet-check choices, and events follow the page language. HTTP requests have a 5-second network receive/send deadline and 1024-byte body limit; rejected/incomplete bodies close the connection rather than entering the SDK's leftover-body drain. Rollback still runs in the HTTP task, so network waits are bounded rather than promising exact real-time recovery.
 
 ## Recovery commands
 
@@ -20,12 +24,14 @@ Codes are invalid after cancellation, error, expiration or use. Busy/rejected/fa
 
 RST/EN only restarts; BOOT retains its normal boot function. Avoid `erase-flash` for routine recovery.
 
-Flashing, monitor and capture must not simultaneously own the same UART. `tools/uart_capture.py --no-reset --interactive --timestamps` combines log capture and command input through one connection. Adapter/kernel behavior may still affect reset lines; the flag prevents the tool's own active reset.
+Flashing, monitor and capture must not simultaneously own the same UART. On Linux/WSL2, `python tools/uart_capture.py --port /dev/ttyACM0 --no-reset --interactive --timestamps --seconds 0` combines capture and line-based command input. Timestamped capture displays prompts before a newline. `--interactive` stdin is POSIX-only; Windows users should use `idf.py -p COM5 monitor` for commands, or capture logs with `--port COM5` without `--interactive`. Adapter/kernel behavior may still affect reset lines; the flag prevents the tool's own active reset. See [tool usage](../tools/README.md).
 
 ## lwIP override
 
-`python3 tools/prepare_lwip.py restore` reverses the project-local patch, leaving global IDF untouched. Transparent mode needs the patch; run `apply` and `check` before building it again. Unexpected local edits or a different pinned revision cause the tool to refuse overwriting files.
+`python tools/prepare_lwip.py restore` reverses the verified project-local `ip4.c` patch, leaving global IDF untouched; Linux can also use `python3`. This offline operation does not check the whole component. Transparent mode needs the patch; run `apply` and `check` before building it again. These commands check both pinned revisions and committed SDK component contents, accepting text LF/CRLF differences but rejecting actual edits, missing files or extra sources. Unexpected local edits also cause refusal; back up and review them instead of forcing an overwrite.
 
 ## Tested boundary
+
+Early hardware/NVS initialization failure can prevent the serial worker from starting; its recovery commands cannot fix every boot failure. Inspect the boot log and verify the required N16R8 hardware first. The existing startup code erases NVS when initialization returns `ESP_ERR_NVS_NO_FREE_PAGES` or `ESP_ERR_NVS_NEW_VERSION_FOUND`, then retries; this exception can clear settings despite an ordinary application flash preserving the NVS partition.
 
 Real-board `reset-admin` successfully allowed password setup and browsing. `reset-network` subsequently kept that password, restored the default management address and restored Internet access. These tests cover ordinary commit/restart, not interrupted Flash writes or hardware storage failure.

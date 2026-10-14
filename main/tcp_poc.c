@@ -320,7 +320,7 @@ err_t proxy_rewrite_ip4_input(struct pbuf **packet, struct netif *inp)
         static int64_t last_warning;
         int64_t now = esp_timer_get_time();
         if ((parsed.flags & (SYN | ACK)) == SYN && now - last_warning > 5000000) {
-            ESP_LOGW(TAG, "SYN mapping unavailable: metadata capacity or untracked DHCP client");
+            ESP_LOGW(TAG, "SYN mapping unavailable: retained/pending quota, capacity or untracked DHCP client");
             last_warning = now;
         }
         pbuf_free(copy);
@@ -408,9 +408,7 @@ static int claim_flow(const struct sockaddr_in *peer, flow_t *snapshot)
     int index = -1;
     portENTER_CRITICAL(&s_flow_lock);
     index=flow_table_peer(s_table,peer->sin_addr.s_addr,ntohs(peer->sin_port));
-    if (index>=0) {
-        flow_t *f=&s_flows[index]; f->socket_open=true; f->retired=false; *snapshot=*f;
-    }
+    if (index>=0 && !flow_table_claim(s_table,index,snapshot)) index=-1;
     portEXIT_CRITICAL(&s_flow_lock);
     return index;
 }
@@ -420,10 +418,7 @@ static void retire_flow(int index)
     if (index < 0) { expire_metadata(); return; }
     const int64_t now = esp_timer_get_time();
     portENTER_CRITICAL(&s_flow_lock);
-    s_flows[index].socket_open = false;
-    s_flows[index].retired = true;
-    s_flows[index].retired_us = now;
-    s_flows[index].touched_us = now;
+    flow_table_retire(s_table,index,now);
     portEXIT_CRITICAL(&s_flow_lock);
 }
 
@@ -601,7 +596,7 @@ esp_err_t tcp_poc_start(void)
     s_listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (s_listener < 0) return ESP_FAIL;
     struct sockaddr_in addr = {.sin_family = AF_INET, .sin_port = htons(PROXY_ECHO_PORT),
-                               .sin_addr.s_addr = htonl(INADDR_ANY)};
+                               .sin_addr.s_addr = s_ap_ip.addr};
     if (bind(s_listener, (struct sockaddr *)&addr, sizeof(addr)) != 0 ||
         listen(s_listener, SOCKS_MAX_SESSIONS) != 0 || !make_nonblocking(s_listener)) {
         ESP_LOGE(TAG, "listener setup failed errno=%d", errno);

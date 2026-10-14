@@ -27,6 +27,8 @@ static void connect_client(const uint8_t mac[6],const char *ip)
 static bool owner_current(void *ctx,uint32_t token) { (void)ctx; return proxy_client_current(token); }
 static bool owner_acquire(void *ctx,uint32_t token,bool dns) { (void)ctx; return proxy_client_acquire(token,true,dns); }
 static void owner_release(void *ctx,uint32_t token,bool dns) { (void)ctx; proxy_client_release(token,true,dns); }
+static void owner_traffic(void *ctx,uint32_t token,bool upload,size_t bytes)
+{ (void)ctx;fprintf(stderr,"TRAFFIC %u %u %zu\n",token,upload,bytes);if(tracked)proxy_client_traffic(token,true,upload,bytes); }
 static unsigned rejected_output;
 static int64_t now_us(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC,&t); return (int64_t)t.tv_sec*1000000+t.tv_nsec/1000; }
 static void notify(void) { uint64_t one=1; (void)write(wake,&one,sizeof(one)); }
@@ -137,7 +139,7 @@ int main(int argc,char **argv)
     const udp_relay_callbacks_t callbacks={.take=take,.pending=pending,.snapshot=snapshot,
         .reply=reply,.count=count,.stats=stats,.maintain=delivery_retry?maintain:NULL,.stop=stop,
         .client_current=tracked?owner_current:NULL,.client_acquire=tracked?owner_acquire:NULL,
-        .client_release=tracked?owner_release:NULL};
+        .client_release=tracked?owner_release:NULL,.client_traffic=owner_traffic};
     udp_relay_run(argv[1],(uint16_t)atoi(argv[2]),wake,&callbacks,NULL);
     atomic_store(&stopping,true); pthread_join(thread,NULL);
     close(app_socket); close(wake); return 0;

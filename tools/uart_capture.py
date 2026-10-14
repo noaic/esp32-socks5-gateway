@@ -1,5 +1,6 @@
 """UART capture, with optional active reset or passive POSIX attachment."""
 import argparse
+import codecs
 import os
 import time
 import select
@@ -45,6 +46,8 @@ with uart:
         stdin_pending = b""
         stdin_discard = False
         last_command = 0.0
+        live_decoder=codecs.getincrementaldecoder("utf-8")("replace")
+        live_line_start=True
         while time.monotonic() < deadline:
             now = time.monotonic()
             if info_due is not None and now >= info_due and now-last_command >= 1.1:
@@ -73,6 +76,16 @@ with uart:
             data = uart.read(uart.in_waiting or 1)
             if data:
                 count += len(data)
+                # Display prompts and echoed characters immediately, even
+                # when timestamped log records await their newline.
+                live=[]
+                for character in live_decoder.decode(data):
+                    if args.timestamps and live_line_start:
+                        live.append(datetime.now().astimezone().isoformat(timespec="milliseconds")+" ")
+                        live_line_start=False
+                    live.append(character)
+                    if character=="\n":live_line_start=True
+                print("".join(live),end="",flush=True)
                 if args.info_logs:
                     ready_scan += data
                     if b'Ready. Type help.' in ready_scan:
@@ -92,10 +105,8 @@ with uart:
                         stamp = datetime.now().astimezone().isoformat(timespec="milliseconds")
                         rendered = stamp.encode() + b" " + line + b"\n"
                         log.write(rendered)
-                        print(rendered.decode("utf-8", errors="replace"), end="", flush=True)
                 else:
                     log.write(data)
-                    print(data.decode("utf-8", errors="replace"), end="", flush=True)
                 log.flush()
         if pending:
             log.write(pending)

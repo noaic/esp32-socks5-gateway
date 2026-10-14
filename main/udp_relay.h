@@ -58,7 +58,7 @@ typedef struct {
     bool (*client_current)(void *context,uint32_t token);
     bool (*client_acquire)(void *context,uint32_t token,bool dns);
     void (*client_release)(void *context,uint32_t token,bool dns);
-    void (*client_traffic)(void *context,uint32_t token,bool upload);
+    void (*client_traffic)(void *context,uint32_t token,bool upload,size_t bytes);
 } udp_relay_callbacks_t;
 
 /* Allocate fixed flow storage once (PSRAM on ESP32); one worker owns sockets. */

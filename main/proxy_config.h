@@ -17,6 +17,8 @@
 #define PROXY_CLIENT_UDP_LIMIT 24
 /* Includes closed/TIME_WAIT mappings; live relay limit remains 64. */
 #define PROXY_MAX_TCP_MAPPINGS 512
+#define PROXY_CLIENT_TCP_MAPPINGS 256 /* Includes retained generations of one client slot. */
+#define PROXY_CLIENT_TCP_PENDING 16 /* Initial SYN mappings not claimed by the listener. */
 #define PROXY_ECHO_IDLE_SECONDS 60
 
 #define PROXY_MAX_UDP_FLOWS 32

@@ -24,14 +24,16 @@ static serial_command_t parse(char *line,const char **argument)
     }
     return SERIAL_UNKNOWN;
 }
-void serial_commands_feed(serial_parser_t *p,const uint8_t *bytes,size_t length,
-                          uint64_t now,serial_dispatch_t dispatch,void *context)
+void serial_commands_feed_terminal(serial_parser_t *p,const uint8_t *bytes,size_t length,
+                          uint64_t now,serial_dispatch_t dispatch,void *context,
+                          const serial_terminal_t *terminal)
 {
     for(size_t i=0;i<length;i++) {
         unsigned c=bytes[i];
         if(c=='\n' && p->previous_cr){p->previous_cr=false;continue;}
         p->previous_cr=c=='\r';
         if(c=='\r'||c=='\n') {
+            if(terminal && terminal->write)terminal->write("\n",1,context);
             p->line[p->used]=0;
             bool empty=!p->discard;for(size_t n=0;n<p->used;n++)if(p->line[n]!=' ' && p->line[n]!='\t')empty=false;
             if(!empty) {
@@ -42,12 +44,20 @@ void serial_commands_feed(serial_parser_t *p,const uint8_t *bytes,size_t length,
                     dispatch(command,argument,context);
                 } else if(!p->busy_reported){p->busy_reported=true;dispatch(SERIAL_BUSY,"",context);}
             }
-            p->used=0;p->discard=p->overflow=false;continue;
+            p->used=0;p->discard=p->overflow=false;
+            if(terminal && terminal->prompt)terminal->prompt(context);
+            continue;
         }
         if(p->discard)continue;
-        if(c==8||c==127){if(p->used)p->used--;continue;}
+        if(c==8||c==127){if(p->used){p->used--;if(terminal && terminal->write)terminal->write("\b \b",3,context);}continue;}
         if((c<32 && c!='\t')||c>126){p->discard=true;continue;}
         if(p->used>=sizeof(p->line)-1){p->discard=p->overflow=true;continue;}
         p->line[p->used++]=(char)c;
+        if(terminal && terminal->write){char visible=c=='\t'?' ':(char)c;terminal->write(&visible,1,context);}
     }
+}
+void serial_commands_feed(serial_parser_t *p,const uint8_t *bytes,size_t length,
+                          uint64_t now,serial_dispatch_t dispatch,void *context)
+{
+    serial_commands_feed_terminal(p,bytes,length,now,dispatch,context,NULL);
 }

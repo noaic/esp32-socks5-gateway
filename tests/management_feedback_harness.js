@@ -74,7 +74,7 @@ async function verifyManagementPage(script,browser){
  const document={documentElement:{lang:'en'},hidden:false,getElementById:node,querySelectorAll:selector=>selector==='button'?buttons:selector==='[data-action]'?actions:[],addEventListener(){},createElement:()=>({append(){}})};
  let status={boot_id:101,job_id:6,job_action:0,job_running:false,job_result:0,job_auto:false,control_available:true,
   clients:[],pending:false,firmware:'test-baseline',ap_ip:'192.168.10.1',internet_checked_ms:0,
-  internet_probe:[],probe:[],internal_total:100000,internal_free:80000,psram_total:8000000,psram_free:7000000};
+  internet_auto:true,internet_target:0,internet_probe:[],probe:[],internal_total:100000,internal_free:80000,psram_total:8000000,psram_free:7000000};
  let mode='reboot';const posts=[];
  const response=data=>({ok:true,status:200,json:async()=>data});
  const fetch=async(path,options)=>{
@@ -83,10 +83,11 @@ async function verifyManagementPage(script,browser){
    if(mode==='drop')throw Error('network failed');
    if(mode==='config')return response({reboot:true,management_url:'http://192.168.20.1/'});
    if(mode==='led')return response({saved:true});
+   if(mode==='internet'){const payload=JSON.parse(options.body);status={...status,internet_auto:payload.enabled,internet_target:payload.target};return response({saved:true});}
    return response({queued:true,restart:true,job_id:7});
   }
   if(path==='/api/config'){configReads++;return response({ap_subnet:10,ap_ssid:'test-ap'});}
-  if(path==='/api/events')return response({events:[]});
+  if(path==='/api/events')return response({events:[{event_code:'boot',event:'设备启动',last_ms:1000,detail:0,count:1},{event:'STA 已关联',last_ms:2000,detail:0,count:1}]});
   if(path==='/api/status'){statusReads++;if(deferred)return new Promise(resolve=>{deferred=resolve;});return response(status);}
   throw Error('unexpected endpoint '+path);
  };
@@ -95,10 +96,18 @@ async function verifyManagementPage(script,browser){
   script+';return {refresh,mutate,status:()=>lastStatus,feedback:()=>operationView()};')(browser,document,{confirm:()=>true},{origin:'http://192.168.10.1'},fetch,Controller,()=>1,()=>{},callback=>{interval=callback;},{now:()=>now});
  for(let i=0;i<40;i++)await Promise.resolve();
  check(api.status().boot_id===101,'initial status loaded');
+ check(node('events').textContent.includes(expected('Device started','设备启动'))&&node('events').textContent.includes(expected('STA associated','STA 已关联')),'coded and legacy events follow page language');
+ node('internetAuto').checked=false;node('internetAuto').onchange();node('internetTarget').value='1';node('internetTarget').onchange();
+ await api.refresh();
+ check(node('internetAuto').checked===false&&node('internetTarget').value==='1','status refresh preserves unsaved check settings');
+ mode='internet';await api.mutate('/api/action',{action:'internet_settings',enabled:false,target:1});
+ check(!node('internetAuto').checked&&node('internetTarget').value==='1','successful save updates the server and clears the draft');
+ status={...status,internet_auto:true,internet_target:0};await api.refresh();
+ check(node('internetAuto').checked&&node('internetTarget').value==='0','saved controls follow later server updates');mode='reboot';
  await api.mutate('/api/action',{action:'reboot'});
- check(posts.length===1&&node('button-reboot').disabled&&!node('refresh').disabled,'accepted reboot locks mutation but allows status read');
+ check(posts.length===2&&node('button-reboot').disabled&&!node('refresh').disabled,'accepted reboot locks mutation but allows status read');
  await api.mutate('/api/action',{action:'reboot'});
- check(posts.length===1,'duplicate reboot suppressed');
+ check(posts.length===2,'duplicate reboot suppressed');
  status={...status,boot_id:102};now=5000;await api.refresh();
  check(!api.feedback().blocked&&node('operation').textContent.includes(expected('The device restarted','设备已重新启动')),'actual page recovers after new boot');
  check(configReads===2,'configuration reloaded after boot');
@@ -106,7 +115,7 @@ async function verifyManagementPage(script,browser){
  check(node('operation').textContent.includes(expected('The device restarted','设备已重新启动')),'normal refresh does not erase completion notice');
  mode='drop';await api.mutate('/api/action',{action:'reboot'});
  now=8000;interval();for(let i=0;i<30;i++)await Promise.resolve();
- check(posts.length===2&&api.feedback().blocked,'lost POST is not retried by polling');
+ check(posts.length===3&&api.feedback().blocked,'lost POST is not retried by polling');
  status={...status,boot_id:103};await api.refresh();
  check(!api.feedback().blocked,'new boot resolves lost POST in full page');
  mode='led';deferred=true;const stale=api.refresh();

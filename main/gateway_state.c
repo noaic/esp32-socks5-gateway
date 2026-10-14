@@ -71,6 +71,14 @@ const char *gateway_event_name(gateway_event_kind_t kind)
         "首次管理口令已设置","维护开始","维护结束","诊断完成","TCP 上游失败","UDP 关联失败","状态灯设置","状态灯错误","互联网检查完成","互联网检查设置","串口恢复已提交"};
     return (unsigned)kind<sizeof(names)/sizeof(*names)?names[kind]:"未知事件";
 }
+const char *gateway_event_code(gateway_event_kind_t kind)
+{
+    static const char *const codes[]={"boot","ap_up","ap_down","sta_link","sta_ip","sta_down",
+        "sta_lost_ip","subnet_conflict","client_join","client_leave","config_stage","config_confirm",
+        "config_rollback","password_set","maint_start","maint_done","diag_done","tcp_error","udp_error",
+        "led_setting","led_error","internet_result","internet_setting","recovery_commit"};
+    return (unsigned)kind<sizeof(codes)/sizeof(*codes)?codes[kind]:"unknown";
+}
 unsigned gateway_state_led_color(const gateway_state_t *s,bool enabled,bool configured,uint64_t now)
 {
     if(!enabled)return 0;

@@ -287,7 +287,25 @@ function responseError(data,status){
 }
 localizePage();
 
-const el=id=>document.getElementById(id), form=el('settings');let busy=false,polling=false,currentSubnet=4,lastStatus=null,mutationEpoch=0;
+const eventNames={
+ boot:['Device started','设备启动'],ap_up:['AP started','AP 启动'],ap_down:['AP stopped','AP 停止'],
+ sta_link:['STA associated','STA 已关联'],sta_ip:['STA acquired IPv4','STA 获得 IP'],sta_down:['STA disconnected','STA 断开'],
+ sta_lost_ip:['STA lost IPv4','STA 丢失 IP'],subnet_conflict:['Subnet conflict; forwarding paused','网段冲突，转发暂停'],
+ client_join:['Client joined','客户端接入'],client_leave:['Client left','客户端离开'],config_stage:['Configuration staged','配置已保存'],
+ config_confirm:['Configuration confirmed','配置已确认'],config_rollback:['Configuration rolled back','配置回滚'],
+ password_set:['Management password set','首次管理口令已设置'],maint_start:['Maintenance started','维护开始'],
+ maint_done:['Maintenance finished','维护结束'],diag_done:['Diagnostics finished','诊断完成'],tcp_error:['Upstream TCP failed','TCP 上游失败'],
+ udp_error:['UDP association failed','UDP 关联失败'],led_setting:['LED setting','状态灯设置'],led_error:['LED error','状态灯错误'],
+ internet_result:['Internet check finished','互联网检查完成'],internet_setting:['Internet check setting','互联网检查设置'],
+ recovery_commit:['Serial recovery committed','串口恢复已提交']
+};
+function eventName(event){
+ const key=Object.prototype.hasOwnProperty.call(eventNames,event.event_code)?event.event_code:
+  Object.keys(eventNames).find(code=>eventNames[code][1]===event.event);
+ if(key)return eventNames[key][pageLanguage==='zh-CN'?1:0];
+ return typeof event.event==='string'&&(pageLanguage==='zh-CN'||!/[\u3400-\u9fff]/.test(event.event))?event.event:t('unknown');
+}
+const el=id=>document.getElementById(id), form=el('settings');let busy=false,polling=false,currentSubnet=4,lastStatus=null,mutationEpoch=0,internetDraft=false;
 const message=text=>{el('message').textContent=text;};
 async function requestJSON(path,payload){
  const method=payload===undefined?'GET':'POST';
@@ -359,22 +377,23 @@ function runtimeStatus(s){
  const stageNames=[t("stage_tcp"),'SOCKS5 NO AUTH',t("stage_udp_dns")];
  el('job').textContent=s.job_id?t("job_text", (s.job_id), (actions[s.job_action]), (s.job_auto?t("automatic"):''), (s.job_running?t("running"):s.job_result?t("execution_failed")+s.job_result:t("finished")), (s.job_action===4?'\n'+s.probe.map((p,i)=>t("probe_result", (stageNames[i]), (probeCode(p.code)), (p.ms))).join('\n'):'')):t("no_job");
  const internetStates=[t("internet_unconfirmed"),t("checking"),t("internet_passed"),t("internet_failed"),t("internet_expired")];
- el('internetAuto').checked=s.internet_auto;el('internetTarget').value=String(s.internet_target);
+ if(!internetDraft){el('internetAuto').checked=s.internet_auto;el('internetTarget').value=String(s.internet_target);}
  el('internetAuto').disabled=el('internetTarget').disabled=el('saveInternet').disabled=s.job_running||!s.control_available;
  el('internetStatus').textContent=t("internet_text", (internetStates[s.internet_state]||t("unknown")), (s.internet_url), (ago(s,s.internet_checked_ms)), (ago(s,s.internet_success_ms)), (s.internet_failures), (s.internet_valid_seconds/60), (s.internet_auto?(s.internet_next_ms?Math.max(0,Math.ceil(s.internet_next_ms/1000-s.uptime_seconds))+t("seconds_later"):t("wait_network")):t("disabled")));
  const internetStageNames=[t("stage_tcp"),'SOCKS5 NO AUTH',t("stage_dns_ipv4"),'SOCKS5 CONNECT + HTTP'];
  el('internetSteps').textContent=s.internet_checked_ms?s.internet_probe.map((p,i)=>t("probe_result", (internetStageNames[i]), (probeCode(p.code)), (p.ms))).join('\n')+t("internet_address", (s.internet_ipv4), (s.internet_http_status||'—')):t("no_internet_result");
  if(s.control_stack_min)el('job').textContent+=t("control_stack", (s.control_stack_total-s.control_stack_min), (s.control_stack_total));
 }
-async function refreshEvents(){try{const r=await api('/api/events');el('events').textContent=r.events.slice().reverse().map(e=>`+${Math.floor(e.last_ms/1000)}s · ${e.event} · detail ${e.detail}${e.count>1?' · '+e.count+t("event_times"):''}`).join('\n')||t("no_events");}catch(error){el('events').textContent=t("events_failed", (error.message));}}
+async function refreshEvents(){try{const r=await api('/api/events');el('events').textContent=r.events.slice().reverse().map(e=>`+${Math.floor(e.last_ms/1000)}s · ${eventName(e)} · ${pageLanguage==='zh-CN'?'详情':'detail'} ${e.detail}${e.count>1?' · '+e.count+t("event_times"):''}`).join('\n')||t("no_events");}catch(error){el('events').textContent=t("events_failed", (error.message));}}
 const kib=n=>`${(n/1024).toFixed(1)} KiB`,mib=n=>`${(n/1048576).toFixed(2)} MiB`;
 const usage=(free,total,unit)=>t("heap_usage", (unit(Math.max(0,total-free))), (unit(total)), (unit(free)));
-async function refresh(){if(polling||busy||document.hidden)return;polling=true;const epoch=mutationEpoch;try{const s=await api('/api/status');if(epoch!==mutationEpoch)return;const restarted=operationFeedback.observe(s,Date.now())==='reboot'||!!(lastStatus&&s.boot_id!==undefined&&lastStatus.boot_id!==s.boot_id);lastStatus=s;runtimeStatus(s);el('status').textContent=t("status_text", (s.firmware), (s.ap_ip), (s.clients.length), (s.ap_client_limit), (s.sta_connected?t("ipv4_ready"):t("not_ready")), (s.sta_ip), (s.sta_connected?s.sta_rssi+t("signal_channel")+s.channel:'—'), (Math.floor(s.uptime_seconds/60)), (usage(s.internal_free,s.internal_total,kib)), (kib(s.internal_min)), (kib(s.internal_largest)), (usage(s.psram_free,s.psram_total,mib)));
+async function refresh(){if(polling||busy||document.hidden)return;polling=true;const epoch=mutationEpoch;try{const s=await api('/api/status');if(epoch!==mutationEpoch)return;const restarted=operationFeedback.observe(s,Date.now())==='reboot'||!!(lastStatus&&s.boot_id!==undefined&&lastStatus.boot_id!==s.boot_id);lastStatus=s;if(restarted)internetDraft=false;runtimeStatus(s);el('status').textContent=t("status_text", (s.firmware), (s.ap_ip), (s.clients.length), (s.ap_client_limit), (s.sta_connected?t("ipv4_ready"):t("not_ready")), (s.sta_ip), (s.sta_connected?s.sta_rssi+t("signal_channel")+s.channel:'—'), (Math.floor(s.uptime_seconds/60)), (usage(s.internal_free,s.internal_total,kib)), (kib(s.internal_min)), (kib(s.internal_largest)), (usage(s.psram_free,s.psram_total,mib)));
 el('status').textContent+=t("diagnostic_flags", (s.verbose_diagnostics?t("on"):t("off")), (s.automatic_link_probe?t("on"):t("off")));
 el('metrics').textContent=t("metrics_text", (s.clients.reduce((n,c)=>n+c.tcp,0)), (s.tcp_flow_limit), (s.clients.reduce((n,c)=>n+c.udp,0)), (s.udp_flow_limit), (s.tcp_pcb_live), (s.tcp_pcb_limit), (s.tcp_pcb_peak), (s.tcp_pcb_failures), (s.ap_tx_errors), (s.sta_tx_errors), (s.clone_failures), (s.client_rto), (s.upstream_rto), (s.client_fast), (s.upstream_fast), (s.http_stack_total-s.http_stack_min), (s.http_stack_total), (s.http_stack_min), (s.reset_reason));
 el('trial').hidden=!s.pending;el('trialText').textContent=t("confirm_remaining", (s.confirm_seconds));
 const list=el('clients');list.replaceChildren();if(!s.clients.length)list.textContent=t("no_clients");for(const c of s.clients){const row=document.createElement('div');row.className='client';const text=document.createElement('pre');text.textContent=t("client_text", (c.ip), (c.mac), (c.rssi??'—'), (c.tcp), (c.udp), (mib(c.up_bytes)), (mib(c.down_bytes)), (c.tcp_denied), (c.udp_denied));row.append(text);const button=document.createElement('button');button.textContent=t("disconnect_client");button.disabled=c.ip==='0.0.0.0';button.onclick=()=>{if(window.confirm(t("disconnect_warning", (c.ip))))mutate('/api/kick',{token:c.token});};row.append(button);list.append(row);}message(s.subnet_overlap?t("subnet_warning", (s.sta_ip), (s.sta_netmask), (s.ap_ip), (s.ap_netmask)):(s.pending?t("trial_notice"):t("status_updated")));if(restarted){await loadConfig();for(const key of ['sta_password','ap_password','admin_password'])form.elements[key].value='';}await refreshEvents();}catch(e){if(epoch===mutationEpoch){const v=operationView();message(v.restarting?t("restart_read_failed", (e.message)):t("read_failed", (e.message)));}}finally{polling=false;updateButtons(lastStatus);}}
-async function mutate(path,payload){if(busy||operationView().blocked)return;if(!lastStatus){message(t("read_first"));return;}busy=true;mutationEpoch++;const kind=payload.action||path.split('/').pop();operationFeedback.begin(kind,lastStatus,location.origin+'/',Date.now());updateButtons(lastStatus);try{const data=await api(path,payload);operationFeedback.accept(data,Date.now());if(data.reboot){for(const key of ['sta_password','ap_password','admin_password'])form.elements[key].value='';}}catch(e){operationFeedback.reject(e,Date.now());}finally{busy=false;updateButtons(lastStatus);if(!operationView().otherAddress)await refresh();}}
+async function mutate(path,payload){if(busy||operationView().blocked)return;if(!lastStatus){message(t("read_first"));return;}busy=true;mutationEpoch++;const kind=payload.action||path.split('/').pop();operationFeedback.begin(kind,lastStatus,location.origin+'/',Date.now());updateButtons(lastStatus);try{const data=await api(path,payload);operationFeedback.accept(data,Date.now());if(payload.action==='internet_settings'&&data.saved===true)internetDraft=false;if(data.reboot){for(const key of ['sta_password','ap_password','admin_password'])form.elements[key].value='';}}catch(e){operationFeedback.reject(e,Date.now());}finally{busy=false;updateButtons(lastStatus);if(!operationView().otherAddress)await refresh();}}
+el('internetAuto').onchange=el('internetTarget').onchange=()=>{internetDraft=true;};
 el('saveInternet').onclick=()=>mutate('/api/action',{action:'internet_settings',enabled:el('internetAuto').checked,target:Number(el('internetTarget').value)});
 el('ledEnabled').onchange=()=>mutate('/api/action',{action:'led',enabled:el('ledEnabled').checked});
 for(const b of document.querySelectorAll('[data-action]'))b.onclick=()=>{

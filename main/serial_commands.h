@@ -12,6 +12,13 @@ typedef struct {
     bool discard,overflow,previous_cr,busy_reported;
 } serial_parser_t;
 typedef void (*serial_dispatch_t)(serial_command_t command,const char *argument,void *context);
+typedef struct {
+    void (*write)(const char *text,size_t length,void *context);
+    void (*prompt)(void *context);
+} serial_terminal_t;
 /* Bounded ASCII lines, one command per second. No heap or terminal escape handling. */
 void serial_commands_feed(serial_parser_t *parser,const uint8_t *bytes,size_t length,
                           uint64_t now,serial_dispatch_t dispatch,void *context);
+void serial_commands_feed_terminal(serial_parser_t *parser,const uint8_t *bytes,size_t length,
+                          uint64_t now,serial_dispatch_t dispatch,void *context,
+                          const serial_terminal_t *terminal);

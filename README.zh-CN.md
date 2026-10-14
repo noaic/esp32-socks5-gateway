@@ -70,6 +70,10 @@ flowchart LR
 | UDP flow | 32 条 | 不同通信的转发状态；两台终端共享 |
 | TCP 映射记录 | 512 条 | 还保留结束阶段信息，不等于 512 条活动连接 |
 
+每个终端槽位最多保留 **256 条 TCP 映射**，包含该槽位之前连接留下的记录；其中最多 **16 条初始映射等待 TCP 监听端接纳**。只有一台终端时也适用，避免新连接突发占满另一槽位的映射空间。结束后的记录至少保留 **120 秒（2×MSL）**；大量短连接可能在活动转发数达到 64 前就触及映射上限。这些限制不保证带宽均分。
+
+TCP 上游连接及协商期限为 **15 秒**，转发连接空闲 **120 秒**后关闭；容量已满时，可回收空闲至少 **30 秒**且收发队列为空的连接。UDP 每个数据报的有效载荷最多 **1462 字节**。评估长时间空闲的应用、连接突发或较大 UDP 消息时，请考虑这些限制。
+
 它适合少量终端的网页访问、轻量传输和网络开发实验。历史视频测试支持“特定条件下可与另一台终端并用”，但视频可能提前缓存，实际码率也未知，不能保证所有 1080P 视频都流畅。如果你的目标是接近 100 Mbps 的传输、大量终端或多台同时进行高码率播放，应选用吞吐和容量更高的设备。
 
 这些数值来自短期局域网测试，不是公网速度承诺。两台终端和 AP/STA 共用一个 2.4 GHz 无线电，更多终端不会让带宽翻倍；信号、干扰、上游代理、目标服务及连接数量都会影响结果。云端构建和宿主回归能验证实现与工具链，无法替代真实无线吞吐测试。
@@ -86,7 +90,7 @@ flowchart LR
 | 无线路由器 | 可用的 2.4 GHz Wi-Fi | ESP32-S3 使用 2.4 GHz，不能连接只提供 5 GHz 的网络 |
 | 测试终端 | 一台手机或电脑 | 第一次先验证一台，再接入第二台 |
 
-其他 ESP32 芯片、Flash/PSRAM 规格或 LED 引脚不同的开发板，可能需要调整硬件配置。第一次使用建议选择上述配置，不要直接把默认固件用于任意 ESP32 板。
+LED 引脚不同需要匹配配置。当前启动检查要求双核、恰好 16 MB Flash 和已初始化的 8 MB PSRAM；仅修改 `menuconfig` 不能支持其他内存规格。第一次使用建议选择上述配置，不要直接把默认固件用于任意 ESP32 板。
 
 ### 软件
 
@@ -246,7 +250,7 @@ python3 tools/prepare_lwip.py check
 
 `patches/lwip-v6.1-transparent-tcp.patch` 保存 `ip4.c` 的改动，`patches/lwip-v6.1.json` 记录两个提交与修改前后的 SHA-256。脚本从 `$IDF_PATH/components/lwip` 复制整个组件及其 lwIP 子模块到项目 `components/lwip`，再只修改该副本。ESP-IDF 的 [同名组件优先规则](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/api-guides/build-system.html#multiple-components-with-the-same-name)会选用项目副本，因此全局 SDK 和其他项目不受影响；生成目录已被 Git 忽略。
 
-校验 `ip4.c` 时，脚本在内存中将 CRLF 视为 LF，仍使用原有固定哈希。`apply`、`restore` 只将已验证的项目副本写为 LF；补丁文件本身为 CRLF 时也可使用，不会改写补丁文件。`check` 完全只读。其他组件文件仍须与 SDK 逐字节一致；代码或空白修改、BOM（文件开头的编码标记）及单独的 CR 字符不会被当成正常换行差异放行。
+校验 `ip4.c` 时，脚本在内存中将 CRLF 视为 LF，仍使用原有固定哈希。`apply`、`restore` 只将已验证的项目副本写为 LF；补丁文件本身为 CRLF 时也可使用，不会改写补丁文件。`check` 完全只读。复制或校验前，`apply`/`check` 还会将**全局 lwIP 组件和子模块的全部文件与 Git 已提交内容比较**：即使 HEAD 正确，也会拒绝修改、缺失或额外的源文件。文本允许 LF/CRLF 检出差异，二进制须逐字节一致；代码或空白修改、BOM（编码标记）及单独的 CR 差异不会放行。项目副本除已打补丁的 `ip4.c` 外，还须与这份已验证的 SDK 一致。
 
 以下命令两种终端都可执行（Linux 也可用 `python3`）：
 
@@ -255,6 +259,8 @@ python3 tools/prepare_lwip.py check
 | `python tools/prepare_lwip.py apply` | 检查版本和内容，创建或复用本地副本，将其中的 `ip4.c` 规范为 LF 并应用补丁；可重复执行 |
 | `python tools/prepare_lwip.py check` | 只读检查提交、按 LF 计算的原始/补丁哈希及完整组件的文件列表和内容 |
 | `python tools/prepare_lwip.py restore` | 将已验证的本地 `ip4.c` 反向还原为 LF，无需激活 SDK；保留本地组件目录，不自动关闭透明功能 |
+
+`restore` 只验证本地 `ip4.c` 的补丁状态，用于离线还原，不是全 SDK/组件完整性检查。完整验证应使用 `apply` 和 `check`。
 
 默认配置启用了透明模式，`restore` 后必须重新 `apply`、`check` 才能继续正常构建；`check` 会拒绝未打补丁的副本。若已有构建曾引用全局 lwIP，准备副本后运行 `idf.py reconfigure` 再构建。版本错误会列出预期与实际提交；哈希错误表示存在 LF/CRLF 之外的差异。先备份并检查 SDK 或本地副本的意外修改，或准备独立的干净 SDK，不要强行覆盖。`apply`、`check` 也会拒绝其他组件文件的变化，写入时拒绝通过本地符号链接修改其他位置。未来升级 ESP-IDF/esp-lwIP 可能改变 `ip4.c` 路径、钩子位置或接口，需要另行审查和适配补丁，不能只改提交或哈希来绕过检查。
 
@@ -338,6 +344,8 @@ usbipd attach --wsl --busid 4-4
 正常构建生成 `build/bootloader/bootloader.bin`（启动应用）、`build/partition_table/partition-table.bin`（描述布局）和 `build/esp32-socks5-gateway.bin`（应用）。当前 `build/flash_args` 分别安排在 `0x0`、`0x8000`、`0x10000`；`idf.py flash` 会按构建参数处理，无需手工猜偏移。
 
 普通刷写只擦写所需镜像范围，不等于 `erase-flash`；分区布局一致时，现有 NVS 设置通常保留。擦除整片会清除网络与管理口令，完整合并镜像的填充区也可能覆盖 NVS。不要将擦除作为例行升级步骤；更换分区布局或不兼容的配置格式前应先保存设置。原有 NVS 配置优先于新固件的编译默认值。
+
+例外是启动时遇到 `ESP_ERR_NVS_NO_FREE_PAGES` 或 `ESP_ERR_NVS_NEW_VERSION_FOUND`：当前代码会擦除 NVS 后重试，配置可能丢失。如果启动未通过硬件/NVS 检查，串口恢复命令尚未启动，应先查看开机日志。见 [恢复边界](docs/maintenance.md#tested-boundary)。
 
 ### 2. 连接 ESP32 创建的 Wi-Fi
 
@@ -442,6 +450,8 @@ flowchart TD
 
 串口命令为英文。在 ESP-IDF monitor 或其他支持发送文本的串口终端中输入，每条命令按 Enter 提交：
 
+固件显示 `gateway> ` 提示符，并在输入时回显已接受的 ASCII 字符。Backspace/Delete 删除最后一个字符；Enter（LF、CR 或 CRLF）只提交一次，并重新显示提示符。只输入命令，不要输入 `gateway> `。若字符显示两次，请关闭终端的 **Local Echo（本地回显）**。每行最多 95 字节，每秒最多一条非空命令；不支持方向键编辑或历史命令。实时日志可能插入输入行，必要时使用 `log warn` 或 `log off`。
+
 | 命令 | 用途 |
 | --- | --- |
 | `help` | 查看帮助 |
@@ -461,13 +471,13 @@ flowchart TD
 
 Web 页的“恢复默认配置”同样保留管理口令，但需要重启后进行 180 秒确认；串口 `reset-network` 使用上述 30 秒确认码执行恢复。**RST/EN 和断电只会重启，不清除已保存的密码或网络；BOOT 按钮未用作恢复菜单。** 日常恢复不需要擦除整块 Flash。
 
-如需同时记录日志和发送命令，可在项目根目录运行：
+Linux/WSL2 可在项目根目录通过同一连接记录日志，并按行发送命令：
 
 ```bash
 python tools/uart_capture.py --port /dev/ttyACM0 --no-reset --interactive --timestamps --seconds 0
 ```
 
-此时先退出其他串口工具。`--seconds 0` 表示持续读取到中断；`--no-reset` 避免工具主动复位，但 USB 适配器或系统驱动仍可能影响复位信号。
+工具的 `--interactive` 标准输入处理仅支持 POSIX，按 Enter 后才发送整行。Windows 输入命令请用 `idf.py -p COM5 monitor` 或串口终端；仅记录日志时可用 `--port COM5`，不加 `--interactive`。带时间戳的采集也会立即显示提示符和回显，无需等待换行。先退出其他串口工具。`--seconds 0` 表示持续读取到中断；`--no-reset` 避免工具主动复位，但 USB 适配器或系统驱动仍可能影响复位信号。
 
 ## 继续开发与运行测试
 
@@ -482,7 +492,7 @@ python tools/uart_capture.py --port /dev/ttyACM0 --no-reset --interactive --time
 - **DNS** 把域名转换成 IP 地址。默认 DHCP 告诉终端使用 `1.1.1.1`；ESP32 没有本地 DNS 服务，普通 DNS UDP 请求也经 SOCKS5 转发。
 - **NVS** 是 Flash 中保存配置的区域。因此设置通常能跨重启保留，重新烧录应用也不会自动覆盖已有的网络参数。
 
-当前总容量为 64 个活动 TCP 转发连接、32 个 UDP flow；另外有 512 条 TCP 映射记录，用于保存目标和结束阶段信息，**不表示可以同时转发 512 个 TCP 连接**。lwIP 负责 TCP 重传等底层工作，应用使用固定循环处理多条连接。
+当前总容量为 64 个活动 TCP 转发连接、32 个 UDP flow；512 条目标/结束阶段映射另受前述单终端上限约束，**不表示可以同时转发 512 个 TCP 连接**。lwIP 负责 TCP 重传等底层工作，应用使用固定循环处理多条连接。
 
 ### 从一条网页连接看 TCP 转发
 
@@ -515,6 +525,10 @@ TCP 和 UDP 分别使用固定的转发循环，检查哪些连接现在能收�
 
 配置管理保存当前值与上一份值。新网络配置先试运行，确认后保留；超时恢复旧值。管理和维护任务与转发循环分开，因此查看状态无需为每个网页请求重新启动代理。两台终端各有连接身份和流量计数，用于识别回复归属，并清理已离开终端的连接。
 
+终端必须通过 ESP32 的 DHCP 获取 IPv4 地址：手动设置静态 IP 不会登记到转发客户端列表。连接身份用于防止重连后的旧回复误投，不是防 IP 伪造的认证。流量统计按成功中继的 TCP/UDP **有效载荷字节**累计，不含协议头；不是无线链路总字节数，也不代表应用已收到数据。
+
+管理服务器将每个请求的网络接收/发送期限限制为 **5 秒**，请求体最多 1024 字节。拒绝请求或未读完正文时关闭连接，不会继续排空任意长度的数据，以限制网络阻塞对同一 HTTP 任务中配置回滚的影响。状态刷新会保留尚未保存的 Internet 检查选项，事件名称随页面语言显示。
+
 想阅读源码时，可按下面的顺序寻找对应实现：
 
 | 要了解的部分 | 主要源码 |
@@ -525,6 +539,7 @@ TCP 和 UDP 分别使用固定的转发循环，检查哪些连接现在能收�
 | UDP 接入、关联和数据格式 | [udp_gateway.c](main/udp_gateway.c)、[udp_relay.c](main/udp_relay.c)、[socks_udp.c](main/socks_udp.c) |
 | 终端归属和计数 | [ap_clients.c](main/ap_clients.c) |
 | 配置保存、确认与回滚 | [gateway_settings.c](main/gateway_settings.c)、[web_management.c](main/web_management.c) |
+| HTTP 传输期限与连接清理 | [management_http.c](main/management_http.c) |
 | 维护任务和连接检查 | [gateway_control.c](main/gateway_control.c)、[gateway_probe.c](main/gateway_probe.c) |
 
 更完整的数据路径和模块职责见 [架构说明](docs/architecture.md)。初次使用只需先掌握配置步骤，再按兴趣阅读实现。
@@ -543,7 +558,20 @@ node tests/management_feedback_harness.js
 node tests/management_transport_harness.js
 ```
 
-ESP-IDF 的 Python 环境包含 pyserial/esptool，串口相关测试会用到它们。当前有 **75 项固件宿主回归与 16 项 lwIP 准备脚本回归**，另有两组前端反馈 / 兼容测试。准备脚本测试使用独立的临时 Git 仓库，覆盖 LF/CRLF、重复操作、只读检查及拒绝意外修改。请检查实际执行数量、失败和跳过情况；测试通过并不代替真实 Wi-Fi、掉电或长时间稳定性测试。
+ESP-IDF 的 Python 环境包含 pyserial/esptool，串口相关测试会用到它们。当前有 **87 项固件/工具宿主回归与 19 项 lwIP 准备脚本回归**，另有两组前端反馈 / 兼容测试。准备脚本测试使用独立的临时 Git 仓库，覆盖 LF/CRLF、重复操作、只读检查及拒绝意外修改。HTTP 期限测试使用真实宿主 socket；串口回显/提示符测试使用伪终端和模拟 UART 驱动。请检查实际执行数量、失败和跳过情况；测试通过并不代替真实 Wi-Fi、掉电或长时间稳定性测试。
+
+### tools 工具速览
+
+在项目根目录运行。固件构建只要求 lwIP 准备工具，其余用于可选的排查和开发测试。完整命令、平台限制和测试前提见 [工具使用说明（英文）](tools/README.md)。
+
+| 工具 | 用途 |
+| --- | --- |
+| `prepare_lwip.py` | `apply` 准备副本，`check` 校验，`restore` 还原本地补丁 |
+| `uart_capture.py` | 保存串口日志；Linux/WSL2 可用 `--interactive` 发送命令 |
+| `probe_upstream_udp.py`、`probe_upstream_quic.py` | 从电脑直接测试 SOCKS UDP/DNS 或 QUIC，不经过 ESP32 |
+| `test_stream_server.py`、`throughput_bench.html` | 在局域网电脑运行测试服务/页面，由 AP 终端测速 |
+| `test_transparent_echo.py`、`test-transparent-echo.ps1` | 用专门的 echo 目标测试透明 TCP；普通 HTTPS 网站不是 echo 服务 |
+| `collect_link_bench.py`、`snapshot_manifest.py` | 提取支持的诊断串口报告；创建/核对本地文件清单 |
 
 ### 项目目录与进一步阅读
 
@@ -567,7 +595,7 @@ ESP-IDF 的 Python 环境包含 pyserial/esptool，串口相关测试会用到�
 
 ## 功能边界与安全说明
 
-当前支持 IPv4、SOCKS5 NO AUTH、TCP 和 UDP 转发；不支持 IPv6、HTTP 上游代理、SOCKS5 账号认证、BLE、OTA、VLESS/REALITY、板上 GeoIP/GeoSite 分流或 NTP。SOCKS UDP 的分片包（`FRAG != 0`）会被丢弃；广播、组播和特殊 P2P 行为不在支持范围内，也未完成所有 QUIC 场景的兼容验证。
+当前支持 IPv4、SOCKS5 NO AUTH、TCP 和 UDP 转发；不支持 IPv6、HTTP 上游代理、SOCKS5 账号认证、BLE、OTA、VLESS/REALITY、板上 GeoIP/GeoSite 分流或 NTP。透明转发拒绝带选项的 IPv4 头和 IPv4 分片；超过 1462 字节的 UDP 有效载荷及 SOCKS UDP 分片包（`FRAG != 0`）会被丢弃。IPv4 分片与 SOCKS 分片是两项不同限制。广播、组播和特殊 P2P 行为不在支持范围内，也未完成所有 QUIC 场景的兼容验证。
 
 两台终端共享同一个 2.4 GHz 无线电和总体转发容量，接入数量限制不会保证带宽均分。它不适合代替需要大量用户、高吞吐或完整路由功能的设备。PSRAM 提供额外内存，但 Wi-Fi 和 lwIP 仍受内部 RAM 限制；长期稳定性、写 Flash 时断电和真实上游中断仍需进一步验证。
 

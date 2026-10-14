@@ -99,6 +99,58 @@ def verify_component(source, target):
                                "back up and review the local override")
 
 
+def verify_source(idf, source):
+    """Check tracked component bytes against HEAD, not another mutable copy."""
+    expected = set()
+    def tree(repository, scope, prefix):
+        command = ["git", "ls-tree", "-rz", "HEAD"]
+        if scope:
+            command += ["--", scope]
+        records = subprocess.check_output(command, cwd=repository).split(b"\0")
+        blobs = []
+        for record in records:
+            if not record:
+                continue
+            info, raw_path = record.split(b"\t", 1)
+            mode, kind, object_id = info.split()
+            path = Path(os.fsdecode(raw_path))
+            relative = prefix / (path.relative_to(scope) if scope else path)
+            if kind == b"commit":
+                if relative != Path("lwip") or object_id.decode() != META["lwip_commit"]:
+                    raise RuntimeError(f"Unexpected SDK submodule: {relative}")
+                continue
+            if kind != b"blob" or mode == b"120000":
+                raise RuntimeError(f"Unsupported SDK file type: {relative}")
+            expected.add(relative)
+            blobs.append((object_id, repository / path, relative))
+        if not blobs:
+            raise RuntimeError("SDK component has no tracked source files")
+        output = subprocess.check_output(["git", "cat-file", "--batch"], cwd=repository,
+                                         input=b"".join(object_id+b"\n" for object_id, _, _ in blobs))
+        offset = 0
+        for _, path, relative in blobs:
+            end = output.index(b"\n", offset)
+            size = int(output[offset:end].split()[-1]); offset = end+1
+            baseline = output[offset:offset+size]; offset += size+1
+            if not path.is_file() or path.is_symlink():
+                raise RuntimeError(f"SDK source missing or symlinked: {relative}")
+            actual = path.read_bytes()
+            # Accept only CRLF/LF checkout differences for text, never binary
+            # modifications, whitespace edits, BOM or lone CR differences.
+            if b"\0" not in baseline:
+                actual, baseline = lf_bytes(actual), lf_bytes(baseline)
+            if actual != baseline:
+                raise RuntimeError(f"Global SDK component has an uncommitted modification: {relative}; "
+                                   "back up and review the SDK; nothing was overwritten")
+    tree(idf, "components/lwip", Path())
+    tree(source / "lwip", None, Path("lwip"))
+    actual = {path.relative_to(source) for path in source.rglob("*")
+              if path.is_file() and ".git" not in path.relative_to(source).parts
+              and "__pycache__" not in path.relative_to(source).parts}
+    if actual != expected:
+        raise RuntimeError("SDK component contains missing or untracked files; back up and review it")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("apply", "check", "restore"))
@@ -130,6 +182,7 @@ def main():
     if digest(source / META["file"], normalize=True) != META["original_sha256"]:
         raise RuntimeError("Global IDF ip4.c has changes beyond LF/CRLF line endings; "
                            "refusing to copy. Review the SDK file; the script has not modified it")
+    verify_source(idf, source)
     if not TARGET.exists():
         if args.action == "check":
             raise RuntimeError("Override missing; run prepare_lwip.py apply")

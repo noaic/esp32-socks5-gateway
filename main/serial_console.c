@@ -15,6 +15,7 @@
 static serial_parser_t parser;
 static serial_recovery_t recovery;
 static bool ready;
+static bool prompt_shown;
 static atomic_bool startup_complete;
 static bool log_selected,quiet_applied;
 static uint64_t quiet_after;
@@ -24,6 +25,10 @@ static const char *const names[]={"boot","ap_up","ap_down","sta_link","sta_ip","
     "config_rollback","password_set","maint_start","maint_done","diag_done","tcp_error","udp_error",
     "led_setting","led_error","internet_result","internet_setting","recovery_commit"};
 static const char *level_name(void){return level==ESP_LOG_INFO?"info":level==ESP_LOG_WARN?"warn":"off";}
+static void terminal_write(const char *text,size_t length,void *context)
+{(void)context;fwrite(text,1,length,stdout);fflush(stdout);}
+static void terminal_prompt(void *context)
+{(void)context;fputs("gateway> ",stdout);fflush(stdout);prompt_shown=true;}
 static void dispatch(serial_command_t command,const char *argument,void *context)
 {
     (void)context;
@@ -113,8 +118,15 @@ void serial_console_poll(void)
     if(!quiet_applied && quiet_after && now>=quiet_after) {
         quiet_applied=true;
         if(!log_selected){level=ESP_LOG_WARN;esp_log_level_set("*",level);}
+        if(prompt_shown)fputc('\n',stdout);
         printf("Ready. Type help. Log: %s.\n",level_name());fflush(stdout);
+        terminal_prompt(NULL);
+        if(parser.used && !parser.discard)terminal_write(parser.line,parser.used,NULL);
     }
     uint8_t bytes[64];int n=uart_read_bytes(CONFIG_ESP_CONSOLE_UART_NUM,bytes,sizeof(bytes),0);
-    if(n>0)serial_commands_feed(&parser,bytes,(size_t)n,gateway_state_clock_ms(),dispatch,NULL);
+    if(n>0) {
+        if(!prompt_shown)terminal_prompt(NULL);
+        const serial_terminal_t terminal={.write=terminal_write,.prompt=terminal_prompt};
+        serial_commands_feed_terminal(&parser,bytes,(size_t)n,gateway_state_clock_ms(),dispatch,NULL,&terminal);
+    }
 }

@@ -272,6 +272,15 @@ class UDPRelayTests(unittest.TestCase):
         self.assertEqual(self.logs.count('DIAG 9 1'), 1)   # Exactly one delivery.
         self.assertNotIn('DIAG 23 ', self.logs)           # No final output drop.
 
+    def test_traffic_callback_counts_payload_without_socks_header(self):
+        with self.run_relay() as (_, _, port):
+            client=self.client(port)
+            for payload in (b'x',b'x'*1200,b'x'*1462):
+                self.send(client,payload,1234)
+                self.assertEqual(client.recv(2048)[6:],payload)
+        for length in (1,1200,1462):
+            self.assertIn(f'TRAFFIC 0 1 {length}',self.logs)
+
     def test_strict_source_ports_same_destination_and_dynamic_relays(self):
         with self.run_relay(split=True) as (peer, _, port):
             a, b = self.client(port), self.client(port)

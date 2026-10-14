@@ -40,6 +40,9 @@ class PrepareLwipTests(unittest.TestCase):
         (self.source / "CMakeLists.txt").write_bytes(b"# fixture\n")
         (self.source / "data.bin").write_bytes(b"\x00\xff\r\n\x00\r")
         lwip_commit = self.init_git(self.source / "lwip", "src")
+        self.git(self.sdk,"add","components/lwip/CMakeLists.txt","components/lwip/data.bin","components/lwip/lwip")
+        self.git(self.sdk,"commit","-m","track component and submodule")
+        idf_commit = self.git(self.sdk,"rev-parse","HEAD")
         (self.project / "tools").mkdir(parents=True)
         (self.project / "patches").mkdir()
         self.script = self.project / "tools/prepare_lwip.py"
@@ -179,6 +182,33 @@ class PrepareLwipTests(unittest.TestCase):
     def test_wrong_lwip_commit_is_rejected(self):
         self.git(self.source / "lwip", "commit", "--allow-empty", "-m", "different lwIP")
         self.cli("apply", error="esp-lwIP revision mismatch: expected")
+        self.assertFalse(self.target.exists())
+
+    def test_other_sdk_file_modifications_are_rejected(self):
+        self.cli("apply")
+        for path in (self.source/"CMakeLists.txt",self.source/"data.bin"):
+            previous=path.read_bytes();path.write_bytes(previous+b"unexpected change")
+            before=snapshot(self.project)
+            for action in ("apply","check"):
+                self.cli(action,error="uncommitted modification")
+                self.assertEqual(snapshot(self.project),before)
+            path.write_bytes(previous)
+
+    def test_untracked_sdk_file_is_not_silently_copied(self):
+        (self.source/"unexpected.c").write_text("int unexpected;\n")
+        self.cli("apply",error="untracked files")
+        self.assertFalse(self.target.exists())
+
+    def test_other_lwip_tracked_source_modification_is_rejected(self):
+        path=self.source/"lwip/src/other.c";path.write_text("int value=0;\n")
+        self.git(self.source/"lwip","add","src/other.c")
+        self.git(self.source/"lwip","commit","-m","pinned additional file")
+        commit=self.git(self.source/"lwip","rev-parse","HEAD")
+        self.git(self.sdk,"add","components/lwip/lwip");self.git(self.sdk,"commit","-m","updated pin")
+        meta=self.project/"patches/lwip-v6.1.json";values=json.loads(meta.read_text())
+        values.update(idf_commit=self.git(self.sdk,"rev-parse","HEAD"),lwip_commit=commit);meta.write_text(json.dumps(values))
+        path.write_text("int value=1;\n")
+        self.cli("apply",error="uncommitted modification")
         self.assertFalse(self.target.exists())
 
     def test_local_ip4_edits_are_preserved_for_all_actions(self):

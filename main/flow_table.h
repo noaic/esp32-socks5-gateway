@@ -19,6 +19,7 @@ typedef struct {
     flow_t flows[PROXY_MAX_TCP_MAPPINGS];
     int16_t heads[PROXY_FLOW_BUCKETS];
     unsigned used, cursor;
+    unsigned owned[PROXY_AP_MAX_CLIENTS], pending[PROXY_AP_MAX_CLIENTS];
 } flow_table_t;
 void flow_table_init(flow_table_t *table);
 int flow_table_input(flow_table_t *table, const proxy_tcp_packet_t *packet,
@@ -26,4 +27,6 @@ int flow_table_input(flow_table_t *table, const proxy_tcp_packet_t *packet,
 int flow_table_input_owned(flow_table_t *table, const proxy_tcp_packet_t *packet,
                            uint32_t token, int64_t now, flow_t *snapshot, bool *created);
 int flow_table_peer(flow_table_t *table, uint32_t client_ip, uint16_t local_peer_port);
+bool flow_table_claim(flow_table_t *table,int index,flow_t *snapshot);
+void flow_table_retire(flow_table_t *table,int index,int64_t now);
 unsigned flow_table_expire(flow_table_t *table, int64_t now, int64_t guard);

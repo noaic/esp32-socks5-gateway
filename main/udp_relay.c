@@ -355,7 +355,7 @@ static void send_pending(flow_t *f,const udp_relay_callbacks_t *cb,void *ctx,udp
         f->touched_us=now;
         if (f->tuple.dst_port==53) proxy_dns_sent_at(&f->dns,p->bytes,p->size,now/1000);
         count_port(cb,ctx,UDP_TX,f->tuple.dst_port);
-        if (cb->client_traffic) cb->client_traffic(ctx,f->client_token,true);
+        if (cb->client_traffic) cb->client_traffic(ctx,f->client_token,true,p->size);
         f->head=(f->head+1)%PENDING_DEPTH; f->count--;
     }
 }

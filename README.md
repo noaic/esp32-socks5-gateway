@@ -70,6 +70,10 @@ Tests used Android clients and a LAN test service, reporting the median of three
 | UDP flows | 32 | Forwarding state for separate traffic flows, shared by both clients |
 | TCP mapping records | 512 | Also retain closing-state information; not 512 active connections |
 
+Each client slot can retain at most **256 TCP mappings**, including records from earlier connections of that slot, and **16 initial mappings awaiting acceptance by the TCP listener**. These limits apply even with one client, protecting the other slot from a burst of new connections. Closing mappings remain reserved for at least **120 seconds (2×MSL)**; a rapid series of short connections can reach these limits before reaching 64 active relays. They do not guarantee equal bandwidth.
+
+TCP upstream connection/negotiation has a **15-second** deadline. Idle relays expire after **120 seconds**; when capacity is full, a relay idle for at least **30 seconds** with empty queues can be reclaimed. UDP payloads are limited to **1462 bytes per datagram**. Consider these limits when evaluating long-idle applications, connection bursts, or large UDP messages.
+
 Suitable uses include browsing, light transfers, and networking experiments with a small number of devices. The video test supports sharing under those particular conditions, but video buffering and unknown bitrate mean it cannot guarantee smooth playback for all 1080P video. For transfers approaching 100 Mbps, many clients, or several simultaneous high-bitrate streams, choose hardware with greater throughput and capacity.
 
 These are short LAN tests, not public-Internet speed guarantees. Both clients and AP/STA share a single 2.4 GHz radio; adding clients does not double bandwidth. Signal, interference, upstream proxy, destination service, and connection count affect results. Cloud builds and host regressions validate tools and implementation, but cannot replace real radio throughput tests.
@@ -86,7 +90,7 @@ These are short LAN tests, not public-Internet speed guarantees. Both clients an
 | Wi-Fi router | An available 2.4 GHz network | ESP32-S3 cannot join a network that only provides 5 GHz |
 | Test client | One phone or computer | Get one client working before adding the second |
 
-A different ESP32 chip, Flash/PSRAM size, or LED pin may require hardware configuration changes. For a first setup, use the configuration above rather than flashing the default firmware onto an arbitrary ESP32 board.
+A different LED pin requires matching configuration. The current startup check requires two CPU cores, exactly 16 MB Flash, and initialized 8 MB PSRAM; changing `menuconfig` alone does not support other memory sizes. For a first setup, use the configuration above rather than flashing the default firmware onto an arbitrary ESP32 board.
 
 ### Software
 
@@ -246,7 +250,7 @@ If you already have the project, enter that checkout rather than cloning again. 
 
 `patches/lwip-v6.1-transparent-tcp.patch` contains the `ip4.c` changes; `patches/lwip-v6.1.json` records the commits and original/patched SHA-256 hashes. The script copies the entire `$IDF_PATH/components/lwip` component, including its lwIP submodule, into project `components/lwip` and modifies only that copy. ESP-IDF's [same-name component precedence](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/api-guides/build-system.html#multiple-components-with-the-same-name) selects the project override, leaving the global SDK and other projects unaffected. The generated directory is Git-ignored.
 
-For `ip4.c` hash checks, CRLF is treated as LF in memory; the pinned hashes are unchanged. `apply` and `restore` write LF only to the verified project copy, and CRLF patch input is also supported without rewriting the patch file. `check` is read-only. Other component files must still match the SDK byte for byte; actual code/whitespace edits, a BOM, or lone CR characters are rejected.
+For `ip4.c` hash checks, CRLF is treated as LF in memory; the pinned hashes are unchanged. `apply` and `restore` write LF only to the verified project copy, and CRLF patch input is also supported without rewriting the patch file. `check` is read-only. Before copying or checking, `apply`/`check` also compare the **whole global lwIP component and submodule against their committed Git contents**, rejecting edited, missing, or extra source files even when HEAD matches. Text files allow LF/CRLF checkout differences; binary files must match byte for byte. Code/whitespace edits, a BOM, or lone CR differences are rejected. The local override must then match that verified SDK copy apart from patched `ip4.c`.
 
 These commands work in either activated terminal (Linux can also use `python3`):
 
@@ -255,6 +259,8 @@ These commands work in either activated terminal (Linux can also use `python3`):
 | `python tools/prepare_lwip.py apply` | Check revisions/content, create or reuse the local copy, normalize its `ip4.c` to LF, and patch it; safe to repeat |
 | `python tools/prepare_lwip.py check` | Read-only verification of revisions, LF-normalized original/patched hashes, and the complete component file list/content |
 | `python tools/prepare_lwip.py restore` | Reverse the verified local `ip4.c` patch and leave it as LF; no activated SDK needed. Keep the local component and do not disable transparent mode |
+
+`restore` verifies only the local `ip4.c` patch state; it is an offline reversal, not a full SDK/component integrity check. Run `apply` and `check` for the full verification.
 
 Default transparent mode requires another `apply` and `check` after `restore`; `check` rejects an unpatched copy. If an existing build used global lwIP, run `idf.py reconfigure` after preparing the override, then build. Revision errors identify the expected and actual commits; a hash error means changes beyond LF/CRLF. Back up and inspect unexpected SDK/local edits, or prepare a separate clean SDK; do not force overwrites. `apply`/`check` also reject other component changes, and writes through local symlinks are refused. An ESP-IDF/esp-lwIP upgrade may change the `ip4.c` path, hook placement, or interfaces, requiring a separate patch review/adaptation. Do not just change commits/hashes to bypass validation.
 
@@ -338,6 +344,8 @@ Then find `/dev/ttyACM*` / `/dev/ttyUSB*` in WSL Bash and flash using the Linux 
 A normal build generates `build/bootloader/bootloader.bin` (starts the application), `build/partition_table/partition-table.bin` (describes the layout), and `build/esp32-socks5-gateway.bin` (application). Current `build/flash_args` places them at `0x0`, `0x8000`, and `0x10000`; `idf.py flash` uses those build arguments, so offsets need not be guessed.
 
 Normal flashing erases/writes the required image ranges; it is not `erase-flash`. With the same layout, existing NVS settings normally remain. A full erase clears network/management credentials, and padding in a merged full image can overwrite NVS too. Do not erase routinely for upgrades; save settings before changing partition layouts or incompatible configuration formats. Existing NVS settings take precedence over new compiled defaults.
+
+An exception is startup recovery from `ESP_ERR_NVS_NO_FREE_PAGES` or `ESP_ERR_NVS_NEW_VERSION_FOUND`: the current code erases NVS and retries, so settings can be lost. If startup fails before the hardware/NVS checks complete, serial recovery commands are not yet available; inspect boot logs first. See [recovery limits](docs/maintenance.md#tested-boundary).
 
 ### 2. Join the ESP32 Wi-Fi network
 
@@ -442,6 +450,8 @@ Use serial recovery if you forget the management password or lose access after c
 
 Commands are in English. Enter them in ESP-IDF monitor or a serial terminal that can send text; press Enter after each command.
 
+The firmware displays `gateway> ` and echoes accepted ASCII characters as you type. Backspace/Delete removes the last character; Enter (LF, CR, or CRLF) submits once and displays the prompt again. Type only the command, without `gateway> `. Disable your terminal's **local echo** if characters appear twice. Input is limited to 95 bytes and one nonempty command per second; arrow-key editing/history is not supported. Live logs can interrupt the input line, so use `log warn` or `log off` when needed.
+
 | Command | Purpose |
 | --- | --- |
 | `help` | Show help |
@@ -461,13 +471,13 @@ After `reset-admin`, open the page and set a new password. After `reset-network`
 
 The Web “Restore default configuration” action also keeps the management password, but requires the 180-second confirmation after restarting. Serial `reset-network` uses the 30-second code above. **RST/EN and power cycling only restart the board; they do not clear saved passwords/network settings. BOOT is not a recovery-menu button.** Routine recovery does not require erasing all Flash.
 
-To capture logs and send commands through one connection, run from the project root:
+On Linux/WSL2, capture logs and send line-based commands through one connection from the project root:
 
 ```bash
 python tools/uart_capture.py --port /dev/ttyACM0 --no-reset --interactive --timestamps --seconds 0
 ```
 
-Exit other serial tools first. `--seconds 0` reads until interrupted. `--no-reset` avoids the tool's active reset, but adapter/driver behavior can still affect reset signals.
+The tool's `--interactive` stdin handling is POSIX-only and sends a line after Enter. On Windows, use `idf.py -p COM5 monitor` or a serial terminal for commands; log-only capture works with `--port COM5` and without `--interactive`. Timestamped capture displays prompts/echo immediately, even before a newline. Exit other serial tools first. `--seconds 0` reads until interrupted. `--no-reset` avoids the tool's active reset, but adapter/driver behavior can still affect reset signals.
 
 ## Development and tests
 
@@ -482,7 +492,7 @@ Think of the ESP32 as an intermediary that receives and passes on data:
 - **DNS** converts names into IP addresses. Default DHCP tells clients to use `1.1.1.1`. The ESP32 does not run a local DNS service; ordinary DNS UDP traffic is forwarded through SOCKS5 too.
 - **NVS** is the area of Flash used for persistent settings. That is why settings survive normal restarts and application flashing does not automatically replace existing network settings.
 
-Total capacity is 64 active TCP relays and 32 UDP flows. There are also 512 TCP mapping records for destinations and closing-state information; **this does not mean 512 simultaneous forwarded TCP connections**. lwIP handles underlying TCP behavior, such as retransmission, while fixed application loops service multiple connections.
+Total capacity is 64 active TCP relays and 32 UDP flows. The 512 destination/closing-state mappings have the per-client limits described above; **this does not mean 512 simultaneous forwarded TCP connections**. lwIP handles underlying TCP behavior, such as retransmission, while fixed application loops service multiple connections.
 
 ### Follow one webpage's TCP connection
 
@@ -515,6 +525,10 @@ TCP and UDP each use a fixed forwarding loop: check which connections can send/r
 
 Configuration management stores current and previous settings. New network settings are tried first, kept after confirmation, or rolled back on timeout. Management/maintenance tasks are separate from forwarding loops, so viewing status does not restart the proxy for each page request. Each client has a connection identity and counters to identify reply ownership and clean up connections when it leaves.
 
+Clients must obtain their IPv4 address through the ESP32's DHCP server: manually assigned static IPs are not registered for forwarding. Client identities protect against stale replies after reconnecting, but are not authentication against IP spoofing. Traffic counters measure relayed TCP/UDP **payload bytes**, excluding protocol headers; they are not radio byte counters or proof of delivery to an application.
+
+The management server bounds network receive/send time to **5 seconds per request**, with a 1024-byte request-body limit. Rejected or partially read bodies close the connection instead of draining an arbitrary amount of data. This bounds network stalls in the HTTP task that also handles configuration rollback. Unsaved Internet-check preferences remain in the form during status polling; event names follow the page language.
+
 To explore the source, start with the matching modules:
 
 | Topic | Main source files |
@@ -525,6 +539,7 @@ To explore the source, start with the matching modules:
 | UDP interception, association, and packet format | [udp_gateway.c](main/udp_gateway.c), [udp_relay.c](main/udp_relay.c), [socks_udp.c](main/socks_udp.c) |
 | Client ownership and counters | [ap_clients.c](main/ap_clients.c) |
 | Settings, confirmation, and rollback | [gateway_settings.c](main/gateway_settings.c), [web_management.c](main/web_management.c) |
+| HTTP transport deadlines and connection cleanup | [management_http.c](main/management_http.c) |
 | Maintenance jobs and connectivity checks | [gateway_control.c](main/gateway_control.c), [gateway_probe.c](main/gateway_probe.c) |
 
 See [architecture](docs/architecture.md) for the complete packet path and module responsibilities. For a first setup, learn the configuration steps first and explore the implementation when useful.
@@ -543,7 +558,20 @@ node tests/management_feedback_harness.js
 node tests/management_transport_harness.js
 ```
 
-The ESP-IDF Python environment includes pyserial/esptool, which the UART tests need. The current suite has **75 firmware host regressions and 16 lwIP preparation regressions**, plus two frontend feedback/compatibility harnesses. The preparation tests use isolated temporary Git repositories to cover LF/CRLF, repeat operations, read-only checks, and rejection of unexpected edits. Check actual counts, failures, and skips. Passing these checks does not replace Wi-Fi, power-loss, or long-running hardware tests.
+The ESP-IDF Python environment includes pyserial/esptool, which the UART tests need. The current suite has **87 firmware/tool host regressions and 19 lwIP preparation regressions**, plus two frontend feedback/compatibility harnesses. The preparation tests use isolated temporary Git repositories to cover LF/CRLF, repeat operations, read-only checks, and rejection of unexpected edits. HTTP deadline tests use real host sockets; serial echo/prompt tests use a pseudo-terminal with a mocked UART driver. Check actual counts, failures, and skips. Passing these checks does not replace Wi-Fi, power-loss, or long-running hardware tests.
+
+### Tools at a glance
+
+Run these from the project root. Only lwIP preparation is required for a firmware build; the others are optional troubleshooting/development tools. See the [tool usage guide](tools/README.md) for complete commands, platform limits, and test setup.
+
+| Tool | Use |
+| --- | --- |
+| `prepare_lwip.py` | `apply` prepares the override, `check` verifies it, `restore` reverses the local patch |
+| `uart_capture.py` | Save serial logs; Linux/WSL2 can also send commands with `--interactive` |
+| `probe_upstream_udp.py`, `probe_upstream_quic.py` | Test SOCKS UDP/DNS or QUIC from the computer directly; these bypass the ESP32 |
+| `test_stream_server.py`, `throughput_bench.html` | Host a LAN test service/page to measure throughput from an AP client |
+| `test_transparent_echo.py`, `test-transparent-echo.ps1` | Check transparent TCP using a dedicated echo target; a normal HTTPS website is not an echo service |
+| `collect_link_bench.py`, `snapshot_manifest.py` | Extract supported diagnostic UART reports; create/check a local file inventory |
 
 ### Repository layout and further reading
 
@@ -567,7 +595,7 @@ The ESP-IDF Python environment includes pyserial/esptool, which the UART tests n
 
 ## Scope and security
 
-The gateway supports IPv4, SOCKS5 NO AUTH, TCP, and UDP forwarding. It does not support IPv6, HTTP upstream proxies, SOCKS5 account authentication, BLE, OTA, VLESS/REALITY, on-device GeoIP/GeoSite routing, or NTP. Fragmented SOCKS UDP packets (`FRAG != 0`) are dropped. Broadcast, multicast, and special P2P behavior are outside scope, and complete QUIC compatibility has not been verified.
+The gateway supports IPv4, SOCKS5 NO AUTH, TCP, and UDP forwarding. It does not support IPv6, HTTP upstream proxies, SOCKS5 account authentication, BLE, OTA, VLESS/REALITY, on-device GeoIP/GeoSite routing, or NTP. Transparent forwarding rejects IPv4 header options and IPv4 fragments; UDP payloads above 1462 bytes and fragmented SOCKS UDP packets (`FRAG != 0`) are dropped. IPv4 fragmentation and SOCKS fragmentation are separate restrictions. Broadcast, multicast, and special P2P behavior are outside scope, and complete QUIC compatibility has not been verified.
 
 Two clients share one 2.4 GHz radio and total forwarding capacity. Client limits do not guarantee equal bandwidth. This project is unsuitable as a replacement for equipment requiring many users, high throughput, or full routing features. PSRAM adds memory, but Wi-Fi/lwIP still depend on limited internal RAM. Long-term stability, interrupted Flash writes, and real upstream outages need further validation.
 

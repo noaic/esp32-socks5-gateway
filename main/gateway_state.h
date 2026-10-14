@@ -41,4 +41,5 @@ void gateway_tcp_response(void);
 void gateway_udp_reply(bool dns);
 uint64_t gateway_state_clock_ms(void);
 const char *gateway_event_name(gateway_event_kind_t kind);
+const char *gateway_event_code(gateway_event_kind_t kind);
 unsigned gateway_state_led_color(const gateway_state_t *state,bool enabled,bool sta_configured,uint64_t now);

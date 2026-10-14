@@ -37,6 +37,36 @@ int main(void){
 }
 '''
 class SerialTests(unittest.TestCase):
+ def test_terminal_echo_prompt_backspace_empty_crlf_and_rejected_input(self):
+  terminal=r'''
+#include "serial_commands.h"
+#include <assert.h>
+#include <string.h>
+static char output[2048];static size_t used;static serial_command_t got;static unsigned count;
+static void write_text(const char *s,size_t n,void *ctx){(void)ctx;assert(used+n<sizeof(output));memcpy(output+used,s,n);used+=n;output[used]=0;}
+static void prompt(void *ctx){write_text("gateway> ",9,ctx);}
+static void dispatch(serial_command_t c,const char *arg,void *ctx){(void)arg;(void)ctx;got=c;count++;write_text("OK\n",3,ctx);}
+int main(void){
+ serial_parser_t p={0};serial_terminal_t t={.write=write_text,.prompt=prompt};
+ const char *typed="statusx\b\r\n";
+ serial_commands_feed_terminal(&p,(const uint8_t *)typed,strlen(typed),1000,dispatch,NULL,&t);
+ assert(got==SERIAL_STATUS&&count==1&&!strcmp(output,"statusx\b \b\nOK\ngateway> "));
+ used=0;output[0]=0;serial_commands_feed_terminal(&p,(uint8_t *)"\n",1,2000,dispatch,NULL,&t);
+ assert(count==1&&!strcmp(output,"\ngateway> "));
+ used=0;output[0]=0;const uint8_t invalid[]={'h','e',27,'[','0','m','\n'};
+ serial_commands_feed_terminal(&p,invalid,sizeof(invalid),3000,dispatch,NULL,&t);
+ assert(got==SERIAL_INVALID&&!strcmp(output,"he\nOK\ngateway> ")&&!strchr(output,27));
+ used=0;output[0]=0;char longline[150];memset(longline,'x',sizeof(longline));longline[149]='\n';
+ serial_commands_feed_terminal(&p,(uint8_t *)longline,sizeof(longline),4000,dispatch,NULL,&t);
+ assert(got==SERIAL_TOO_LONG&&used==95+1+3+9);
+ serial_commands_feed_terminal(&p,(uint8_t *)"help\n",5,4001,dispatch,NULL,&t);assert(got==SERIAL_BUSY);
+ return 0;
+}
+'''
+  with tempfile.TemporaryDirectory() as d:
+   p=pathlib.Path(d);(p/'check.c').write_text(terminal)
+   subprocess.run(['gcc','-std=c11','-Wall','-Wextra','-Werror','-I',str(ROOT/'main'),str(p/'check.c'),str(ROOT/'main/serial_commands.c'),'-o',str(p/'check')],check=True)
+   subprocess.run([str(p/'check')],check=True)
  def test_split_lines_crlf_backspace_invalid_overflow_rate_and_commands(self):
   with tempfile.TemporaryDirectory() as d:
    p=pathlib.Path(d);(p/'check.c').write_text(HARNESS)

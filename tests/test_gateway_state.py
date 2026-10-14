@@ -61,6 +61,9 @@ int main(void) {
     n=gateway_events_snapshot(history,64);assert(n<=64);
     for(size_t i=1;i<n;i++)assert(history[i].sequence>history[i-1].sequence && history[i].last_ms>=history[i-1].last_ms);
     assert(!strcmp(gateway_event_name((gateway_event_kind_t)999),"未知事件"));
+    assert(!strcmp(gateway_event_code(GW_BOOT),"boot"));
+    assert(!strcmp(gateway_event_code(GW_RECOVERY_COMMIT),"recovery_commit"));
+    assert(!strcmp(gateway_event_code((gateway_event_kind_t)999),"unknown"));
     return 0;
 }
 '''

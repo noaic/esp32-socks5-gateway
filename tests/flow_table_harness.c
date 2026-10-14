@@ -41,5 +41,36 @@ int main(void)
     assert(flow_table_input(&table,&p,400,&snapshot,&created)>=0 && created);
     assert(flow_table_input(&table,&p,401,&snapshot,&created)>=0 && !created);
     assert(table.used==1);
+    /* An unacknowledged SYN burst must not consume the other client's
+     * metadata or hundreds of lwIP half-open PCBs. Retransmits still resolve. */
+    flow_table_init(&table);p.flags=2;p.src_ip=1;
+    for(unsigned i=0;i<PROXY_CLIENT_TCP_PENDING;i++){
+        p.dst_ip=1000+i;assert(flow_table_input_owned(&table,&p,2,1,&snapshot,&created)>=0);
+    }
+    p.dst_ip=2000;assert(flow_table_input_owned(&table,&p,2,1,&snapshot,&created)==-1);
+    p.dst_ip=1000;assert(flow_table_input_owned(&table,&p,2,2,&snapshot,&created)>=0&&!created);
+    p.src_ip=2;p.dst_ip=2000;int b=flow_table_input_owned(&table,&p,3,2,&snapshot,&created);assert(b>=0);
+    assert(flow_table_claim(&table,b,&snapshot));assert(!flow_table_claim(&table,b,&snapshot));
+    assert(table.pending[1]==0);flow_table_retire(&table,b,2);assert(table.pending[1]==0);
+    assert(flow_table_expire(&table,100,100)==0);
+    assert(flow_table_expire(&table,102,100)==PROXY_CLIENT_TCP_PENDING+1);
+    assert(table.owned[0]==0 && table.pending[0]==0 && table.owned[1]==0);
+    /* Retained records count across reconnect tokens of one slot, while
+     * the other slot always has its own 256-record capacity. */
+    flow_table_init(&table);p.src_ip=1;
+    for(unsigned i=0;i<PROXY_CLIENT_TCP_MAPPINGS;i++){
+        p.dst_ip=1000+i;int index=flow_table_input_owned(&table,&p,2,1,&snapshot,&created);assert(index>=0);
+        assert(flow_table_claim(&table,index,&snapshot));flow_table_retire(&table,index,2);
+    }
+    p.dst_ip=2000;assert(flow_table_input_owned(&table,&p,4,3,&snapshot,&created)==-1);
+    p.src_ip=2;
+    for(unsigned i=0;i<PROXY_CLIENT_TCP_MAPPINGS;i++){
+        p.dst_ip=2000+i;int index=flow_table_input_owned(&table,&p,3,3,&snapshot,&created);assert(index>=0);
+        assert(flow_table_claim(&table,index,&snapshot));flow_table_retire(&table,index,3);
+    }
+    assert(table.used==512 && table.pending[0]==0 && table.pending[1]==0);
+    assert(flow_table_expire(&table,101,100)==0);
+    assert(flow_table_expire(&table,102,100)==256 && table.owned[0]==0 && table.owned[1]==256);
+    assert(flow_table_expire(&table,103,100)==256 && table.used==0);
     puts("PASS: shared source-port isolation, full capacity, guards, hash unlink/reuse");
 }
