@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "cJSON.h"
+#include "esp_app_desc.h"
 #include "esp_heap_caps.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
@@ -240,7 +241,7 @@ static esp_err_t status(httpd_req_t *req)
     wifi_ap_record_t upstream={0}; bool connected=esp_wifi_sta_get_ap_info(&upstream)==ESP_OK;
     wifi_sta_list_t stations={0}; esp_wifi_ap_get_sta_list(&stations);
     char ip[16]; ip_text(sta.ip.addr,ip);
-    cJSON_AddStringToObject(root,"firmware","web51-operation-feedback");
+    cJSON_AddStringToObject(root,"firmware",esp_app_get_description()->version);
 #if CONFIG_PROXY_VERBOSE_DIAGNOSTICS
     cJSON_AddBoolToObject(root,"verbose_diagnostics",true);
 #else

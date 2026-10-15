@@ -371,22 +371,24 @@ class RelayTests(unittest.TestCase):
         self.assertIn('capacity idle close',logs)
 
     def test_capacity_does_not_evict_sessions_awaiting_first_response(self):
-        # Leave a wider normal-idle margin for 64 concurrent handshakes;
-        # the pressure threshold remains 700ms in this production-core build.
-        binary=self.build_binary('relay_pressure_slow',5000)
+        # Test pressure expiry, not normal idle expiry. Keep a wide normal-idle
+        # margin; the pressure threshold remains 700ms in this core build.
+        binary=self.build_binary('relay_pressure_slow',30000)
         upstream=socket.socket(); upstream.bind(('127.0.0.1',0)); upstream.listen(64); upstream.settimeout(.1)
         stop=threading.Event(); errors=[]; workers=[]
-        received=[0]; lock=threading.Lock()
+        received=[0]; progress=threading.Condition()
         def silent(s):
             try:
                 with s:
                     s.settimeout(4); self.handshake(s)
                     s.sendall(b'\x05\x00\x00\x01'+bytes(6))
                     self.assertEqual(exact(s,5),b'hello')
-                    with lock: received[0]+=1
+                    with progress:
+                        received[0]+=1
+                        progress.notify_all()
                     # No application response yet: a slow server must be
                     # protected from pressure expiry, even after its TTL.
-                    stop.wait(3)
+                    stop.wait()  # Keep the connection open until test cleanup.
             except (ConnectionResetError, BrokenPipeError, EOFError): pass
             except Exception as e: errors.append(e)
         def acceptor():
@@ -399,10 +401,13 @@ class RelayTests(unittest.TestCase):
         server=threading.Thread(target=acceptor); server.start(); clients=[]
         try:
             port=int(proc.stdout.readline())
-            for _ in range(64):
+            for expected in range(1,65):
                 c=socket.create_connection(('127.0.0.1',port)); clients.append(c); c.sendall(b'hello')
-            deadline=time.monotonic()+1
-            while received[0]<64 and time.monotonic()<deadline: time.sleep(.01)
+                # The harness listener has backlog=1. Wait for each request
+                # rather than introducing unrelated TCP SYN-retry delays.
+                with progress:
+                    self.assertTrue(progress.wait_for(lambda: received[0]>=expected,timeout=2),
+                                    'Initial request did not reach the SOCKS5 server')
             self.assertEqual(received[0],64)
             time.sleep(.8)
             newcomer=socket.create_connection(('127.0.0.1',port)); newcomer.settimeout(.15); clients.append(newcomer)
@@ -418,5 +423,6 @@ class RelayTests(unittest.TestCase):
             upstream.close()
         self.assertEqual(errors,[],logs)
         self.assertNotIn('capacity idle close',logs)
+        self.assertNotIn('idle close',logs)
 
 if __name__=='__main__': unittest.main()

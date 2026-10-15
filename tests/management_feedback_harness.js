@@ -66,14 +66,14 @@ async function verifyManagementPage(script,browser){
  let checks=0,now=1000,interval,deferred,statusReads=0,configReads=0;
  const check=(ok,label)=>{checks++;if(!ok)throw Error(label);};
  const nodes=new Map(),buttons=[];
- const node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',checked:false,disabled:false,hidden:false,textContent:'',replaceChildren(){},append(){}});return nodes.get(id);};
+ const node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',checked:false,disabled:false,hidden:false,open:false,textContent:'',replaceChildren(){},append(){},addEventListener(event,listener){this[event]=listener;},contains(child){return child.advanced===true;}});return nodes.get(id);};
  const fields=new Proxy({}, {get:(target,key)=>node('field-'+key)});
  node('settings').elements=fields;
- for(const id of ['refresh','confirm','defaults','saveInternet'])buttons.push(node(id));
+ for(const id of ['refresh','confirm','defaults','saveInternet','guideAction'])buttons.push(node(id));
  const actions=['reboot','reconnect','relay_reset','diagnose','internet'].map(action=>Object.assign(node('button-'+action),{dataset:{action}}));buttons.push(...actions);
  const document={documentElement:{lang:'en'},hidden:false,getElementById:node,querySelectorAll:selector=>selector==='button'?buttons:selector==='[data-action]'?actions:[],addEventListener(){},createElement:()=>({append(){}})};
  let status={boot_id:101,job_id:6,job_action:0,job_running:false,job_result:0,job_auto:false,control_available:true,
-  clients:[],pending:false,firmware:'test-baseline',ap_ip:'192.168.10.1',internet_checked_ms:0,
+  clients:[],pending:false,firmware:'test-baseline',ap_ip:'192.168.10.1',ap_client_limit:2,sta_connected:true,forwarding_ready:true,sta_ip:'192.168.1.10',internet_checked_ms:0,internet_state:0,tcp_flow_limit:64,udp_flow_limit:32,
   internet_auto:true,internet_target:0,internet_probe:[],probe:[],internal_total:100000,internal_free:80000,psram_total:8000000,psram_free:7000000};
  let mode='reboot';const posts=[];
  const response=data=>({ok:true,status:200,json:async()=>data});
@@ -86,7 +86,7 @@ async function verifyManagementPage(script,browser){
    if(mode==='internet'){const payload=JSON.parse(options.body);status={...status,internet_auto:payload.enabled,internet_target:payload.target};return response({saved:true});}
    return response({queued:true,restart:true,job_id:7});
   }
-  if(path==='/api/config'){configReads++;return response({ap_subnet:10,ap_ssid:'test-ap'});}
+  if(path==='/api/config'){configReads++;return response({ap_subnet:10,ap_ssid:'test-ap',sta_ssid:'upstream'});}
   if(path==='/api/events')return response({events:[{event_code:'boot',event:'设备启动',last_ms:1000,detail:0,count:1},{event:'STA 已关联',last_ms:2000,detail:0,count:1}]});
   if(path==='/api/status'){statusReads++;if(deferred)return new Promise(resolve=>{deferred=resolve;});return response(status);}
   throw Error('unexpected endpoint '+path);
@@ -96,6 +96,22 @@ async function verifyManagementPage(script,browser){
   script+';return {refresh,mutate,status:()=>lastStatus,feedback:()=>operationView()};')(browser,document,{confirm:()=>true},{origin:'http://192.168.10.1'},fetch,Controller,()=>1,()=>{},callback=>{interval=callback;},{now:()=>now});
  for(let i=0;i<40;i++)await Promise.resolve();
  check(api.status().boot_id===101,'initial status loaded');
+ check(!node('configDetails').open&&!node('advancedSettings').open&&!node('diagnosticsDetails').open&&!node('statusDetails').open&&!node('maintenanceDetails').open,'configured healthy page keeps advanced sections folded');
+ check(node('nextTitle').textContent===expected('Wi-Fi is ready; verify the proxy path','Wi-Fi 已就绪，请验证代理链路'),'initial primary action explains next step');
+ status={...status,subnet_overlap:true};await api.refresh();
+ check(node('configDetails').open&&node('advancedSettings').open,'subnet conflict opens the settings required to fix it');
+ node('configDetails').open=false;node('advancedSettings').open=false;await api.refresh();
+ check(!node('configDetails').open&&!node('advancedSettings').open,'polling respects the user collapsing an already-reported issue');
+ await node('guideAction').onclick();
+ check(node('configDetails').open&&node('advancedSettings').open&&posts.length===0,'guided settings action navigates without a mutation');
+ node('configDetails').open=false;node('advancedSettings').open=false;
+ node('settings').invalid({target:{advanced:true}});
+ check(node('configDetails').open&&node('advancedSettings').open,'invalid required fields become focusable inside folded settings');
+ status={...status,subnet_overlap:false,internet_checked_ms:100,internet_state:3,internet_probe:[{code:0,ms:1},{code:0,ms:1},{code:0,ms:1},{code:6302,ms:1}]};await api.refresh();
+ check(node('diagnosticsDetails').open&&node('nextHelp').textContent.includes(expected('does not establish that all Internet access is down','不表示整个互联网都不可用')),'target failure opens diagnostics with limited and actionable interpretation');
+ node('diagnosticsDetails').open=false;await api.refresh();
+ check(!node('diagnosticsDetails').open,'repeated polling does not reopen the same diagnostic result');
+ status={...status,internet_checked_ms:0,internet_state:0,internet_probe:[]};await api.refresh();
  check(node('events').textContent.includes(expected('Device started','设备启动'))&&node('events').textContent.includes(expected('STA associated','STA 已关联')),'coded and legacy events follow page language');
  node('internetAuto').checked=false;node('internetAuto').onchange();node('internetTarget').value='1';node('internetTarget').onchange();
  await api.refresh();
@@ -129,10 +145,50 @@ async function verifyManagementPage(script,browser){
  return 'Management full-page integration ('+document.documentElement.lang+'): '+checks+' functional assertions PASS';
 }
 
+function verifyConnectionGuidance(locale){
+ let checks=0;
+ const check=(ok,label)=>{checks++;if(!ok)throw Error(label);};
+ const base={sta_connected:true,forwarding_ready:true,subnet_overlap:false,job_id:0,job_running:false,job_action:0,job_result:0,
+  internet_checked_ms:0,internet_state:0,clients:[]};
+ const config={sta_ssid:'upstream'};
+ const steps=(stage,code,count=3)=>Array.from({length:count},(_,i)=>({code:i<stage?0:i===stage?code:5000,ms:1}));
+ const expect=(overrides,kind,action,settings=config)=>{
+  const result=locale.connectionGuidance({...base,...overrides},settings);
+  check(result.kind===kind&&result.action===action,'guidance '+kind+' / '+action);
+  check(locale.t('guide_'+kind+'_title').length>0&&locale.t('guide_'+kind+'_help').length>0&&locale.t('guide_'+action).length>0,'localized guidance '+kind);
+  check(!['reboot','relay_reset','reconnect','confirm'].includes(result.action),'guidance never proposes disruptive or premature confirmation');
+ };
+ expect({},'unread','read_config',null);
+ expect({},'unread','read_config',{});
+ expect({},'setup','settings',{sta_ssid:''});
+ expect({sta_connected:false},'wifi','settings');
+ expect({subnet_overlap:true,sta_connected:false},'subnet','advanced');
+ expect({forwarding_ready:false},'wait','details');
+ expect({job_running:true},'busy','diagnostics');
+ expect({pending:true},'trial','internet');
+ expect({clients:[{ip:'0.0.0.0'}]},'dhcp','details');
+ expect({internet_state:2,internet_checked_ms:100},'pass','diagnostics');
+ expect({tcp_errors:999,tcp_error:-104,udp_errors:999,udp_error:-104},'check','internet');
+ for(const [stage,code,kind] of [[0,-111,'port'],[1,2255,'auth'],[1,3000,'auth'],[2,-110,'udp'],[2,1007,'udp'],[2,4003,'dns']]){
+  expect({job_action:4,job_id:3,probe:steps(stage,code)},kind,'diagnose');
+  expect({internet_checked_ms:100,internet_state:0,internet_probe:steps(stage,code,4)},kind,'internet');
+ }
+ for(const code of [-110,1002,6302,7000,3000])expect({internet_checked_ms:100,internet_state:3,internet_probe:steps(3,code,4)},'target','internet');
+ expect({internet_checked_ms:100,internet_state:3,internet_probe:steps(3,2255,4)},'auth','internet');
+ expect({job_action:4,job_id:3,probe:steps(3,0)},'probe_pass','internet');
+ expect({job_action:4,job_id:3,probe:steps(0,5000)},'check','internet');
+ expect({job_action:4,job_id:3,job_result:259,probe:steps(0,5000)},'check','internet');
+ expect({internet_checked_ms:0,internet_state:0,internet_probe:steps(0,-111,4)},'check','internet');
+ expect({internet_checked_ms:100,internet_state:4,internet_probe:steps(0,-111,4)},'check','internet');
+ expect({internet_checked_ms:100,internet_state:0,internet_probe:steps(0,5000,4)},'check','internet');
+ check(!locale.t('guide_target_help').includes('reboot'),'target failure does not suggest rebooting');
+ return 'Management actionable guidance ('+locale.pageLanguage+'): '+checks+' functional assertions PASS';
+}
+
 function pageI18n(script,browser){
  const document={documentElement:{lang:'en'},querySelectorAll:()=>[]};
  return new Function('navigator','document',script.slice(0,script.indexOf('const el=id=>'))+
-  ';return {t,pageLanguage,responseError};')(browser,document);
+  ';return {t,pageLanguage,responseError,connectionGuidance:typeof connectionGuidance==="function"?connectionGuidance:null};')(browser,document);
 }
 function verifyLanguageSelection(pages){
  let checks=0;
@@ -178,6 +234,7 @@ if(typeof require==='function'&&typeof module!=='undefined'&&require.main===modu
   for(const language of ['en-US','zh-CN']){
    const browser={languages:[language],language};
    console.log(verifyManagementFeedback(source,pageI18n(script,browser)));
+   console.log(verifyConnectionGuidance(pageI18n(script,browser)));
    console.log(await verifyManagementPage(script,browser));
   }
  })().catch(error=>{console.error(error);process.exitCode=1;});

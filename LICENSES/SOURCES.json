@@ -1,0 +1,137 @@
+{
+  "project": "esp32-socks5-gateway",
+  "idf_commit": "fff9895c82d744c7237be8847347bdd1b07c6643",
+  "lwip_commit": "c6f2f878e7b0f86033214b85547d579be43351e3",
+  "toolchain": "xtensa-esp-elf esp-15.2.0_20251204 (GCC 15.2.0)",
+  "files": [
+    {
+      "file": "Apache-2.0.txt",
+      "source": "ESP-IDF/LICENSE",
+      "upstream": "https://github.com/espressif/esp-idf/blob/fff9895c82d744c7237be8847347bdd1b07c6643/LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "file": "CA-CERTIFICATES-NOTICE.txt",
+      "source": "ESP-IDF certificate bundle header and source-availability notice",
+      "upstream": "https://github.com/espressif/esp-idf/tree/fff9895c82d744c7237be8847347bdd1b07c6643/components/mbedtls/esp_crt_bundle",
+      "sha256": "bb6ed8c904e408acf2eaf19a11843feb288e0ad55badf9920f3706e91f3ac4c9",
+      "note": "Original bundle header retained, followed by project source-availability explanation."
+    },
+    {
+      "file": "CC-BY-SA-4.0.txt",
+      "source": "XTLS/Xray-examples/LICENSE",
+      "upstream": "https://github.com/XTLS/Xray-examples/blob/79275c197ea54a55f1ff7431dd8bc5b48111e456/LICENSE",
+      "sha256": "3b2890eacd851373001c4a14623458e3adaf1b1967939aa9c38a318e28d61c00"
+    },
+    {
+      "file": "FreeRTOS-MIT.txt",
+      "source": "ESP-IDF/components/freertos/FreeRTOS-Kernel/LICENSE.md",
+      "upstream": "https://github.com/espressif/esp-idf/blob/fff9895c82d744c7237be8847347bdd1b07c6643/components/freertos/FreeRTOS-Kernel/LICENSE.md",
+      "sha256": "508a77d2e7b51d98adeed32648ad124b7b30241a8e70b2e72c99f92d8e5874d1"
+    },
+    {
+      "file": "GCC-GPL-3.0.txt",
+      "source": "Xtensa esp-15.2.0_20251204/share/licenses/gcc/COPYING3",
+      "upstream": "https://gcc.gnu.org/git/?p=gcc.git;a=blob;f=COPYING3;hb=releases/gcc-15.2.0",
+      "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+    },
+    {
+      "file": "GCC-Runtime-Exception-3.1.txt",
+      "source": "Xtensa esp-15.2.0_20251204/share/licenses/gcc/COPYING.RUNTIME",
+      "upstream": "https://gcc.gnu.org/git/?p=gcc.git;a=blob;f=COPYING.RUNTIME;hb=releases/gcc-15.2.0",
+      "sha256": "9d6b43ce4d8de0c878bf16b54d8e7a10d9bd42b75178153e3af6a815bdc90f74"
+    },
+    {
+      "file": "MPL-2.0.txt",
+      "source": "Mozilla official MPL 2.0 plain-text license",
+      "upstream": "https://www.mozilla.org/media/MPL/2.0/index.txt",
+      "sha256": "3f3d9e0024b1921b067d6f7f88deb4a60cbe7a78e76c64e3f1d7fc3b779b9d04"
+    },
+    {
+      "file": "MbedTLS-LICENSE.txt",
+      "source": "ESP-IDF/components/mbedtls/mbedtls/LICENSE",
+      "upstream": "https://github.com/espressif/mbedtls/blob/a2b32072ea898afc1ed5b6caf6931e36028c91d6/LICENSE",
+      "sha256": "9b405ef4c89342f5eae1dd828882f931747f71001cfba7d114801039b52ad09b"
+    },
+    {
+      "file": "SDK-SOURCE-NOTICES.txt",
+      "source": "Grouped initial comments from pinned SDK compiled sources and selected headers",
+      "upstream": "https://github.com/espressif/esp-idf/tree/fff9895c82d744c7237be8847347bdd1b07c6643",
+      "sha256": "a73e7fd66ba9d84695ab438f2e92b0088efcdeba8fa9ef8a00187162cd116fe7",
+      "note": "See introduction in this file and THIRD_PARTY_NOTICES.md for collection scope. Copyright/license wording retained; line endings normalized to LF and trailing whitespace removed. Some optional files included."
+    },
+    {
+      "file": "TF-PSA-Crypto-LICENSE.txt",
+      "source": "ESP-IDF/components/mbedtls/mbedtls/tf-psa-crypto/LICENSE",
+      "upstream": "https://github.com/espressif/mbedtls/blob/a2b32072ea898afc1ed5b6caf6931e36028c91d6/tf-psa-crypto/LICENSE",
+      "sha256": "da8c58f05f135a9d15e9ffad4ecf854cfcc1f014c8abfd75ba05f62630ccc118"
+    },
+    {
+      "file": "TLSF-BSD-3-Clause.txt",
+      "source": "BSD-3-Clause terms, with TLSF SPDX copyright holders from the pinned SDK",
+      "upstream": "https://github.com/espressif/esp-idf/tree/fff9895c82d744c7237be8847347bdd1b07c6643/components/heap/tlsf",
+      "sha256": "0814305baf804875063115544f8f682f11224cac4a64faee77059ef4557548c5",
+      "note": "Reproduces BSD-3-Clause terms; copyright notices combined from tlsf.c, tlsf_control_functions.h. Not a verbatim upstream standalone license file."
+    },
+    {
+      "file": "cJSON-MIT.txt",
+      "source": "espressif/cjson 1.7.19/LICENSE",
+      "upstream": "https://components.espressif.com/components/espressif/cjson/versions/1.7.19",
+      "sha256": "a36dda207c36db5818729c54e7ad4e8b0c6fba847491ba64f372c1a2037b6d5c"
+    },
+    {
+      "file": "esp_coex-LICENSE.txt",
+      "source": "ESP-IDF/components/esp_coex/lib/LICENSE",
+      "upstream": "https://github.com/espressif/esp-coex-lib/blob/ddc56fa524a38df3098d2f36475fbe3eefe9b4f4/LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "file": "esp_phy-LICENSE.txt",
+      "source": "ESP-IDF/components/esp_phy/lib/LICENSE",
+      "upstream": "https://github.com/espressif/esp-phy-lib/blob/5695f4f38108658bc4a33e4712c1ebcb34911434/LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "file": "esp_wifi-LICENSE.txt",
+      "source": "ESP-IDF/components/esp_wifi/lib/LICENSE",
+      "upstream": "https://github.com/espressif/esp32-wifi-lib/blob/7cd4d7b2b4acc38aead43b029ac9409c3eba9c54/LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "file": "hostapd-BSD-3-Clause.txt",
+      "source": "ESP-IDF/components/wpa_supplicant/README",
+      "upstream": "https://github.com/espressif/esp-idf/blob/fff9895c82d744c7237be8847347bdd1b07c6643/components/wpa_supplicant/README",
+      "sha256": "17ccbcf4b17a910795292fb4a95f4742d2ecda37d06fcf20d60ffbd70cfbc609"
+    },
+    {
+      "file": "hostapd-COPYING.txt",
+      "source": "ESP-IDF/components/wpa_supplicant/COPYING",
+      "upstream": "https://github.com/espressif/esp-idf/blob/fff9895c82d744c7237be8847347bdd1b07c6643/components/wpa_supplicant/COPYING",
+      "sha256": "a87ac4e333d0f120408a9d814e40c3672cd27f365af89b4f2f6631f7a9338953"
+    },
+    {
+      "file": "http_parser-MIT.txt",
+      "source": "ESP-IDF/components/http_parser/LICENSE.txt",
+      "upstream": "https://github.com/espressif/esp-idf/blob/fff9895c82d744c7237be8847347bdd1b07c6643/components/http_parser/LICENSE.txt",
+      "sha256": "3aced2d086d3f59cafb6589770c30c1e45a5bdf50c1d4375060b81a615db604c"
+    },
+    {
+      "file": "led_strip-Apache-2.0.txt",
+      "source": "espressif/led_strip 3.0.3/LICENSE",
+      "upstream": "https://components.espressif.com/components/espressif/led_strip/versions/3.0.3",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "file": "lwIP-BSD-3-Clause.txt",
+      "source": "ESP-IDF/components/lwip/lwip/COPYING",
+      "upstream": "https://github.com/espressif/esp-lwip/blob/c6f2f878e7b0f86033214b85547d579be43351e3/COPYING",
+      "sha256": "ef4aac92e05e87cd1cdc140870ed52206ba03d4a7fe46c1e11d7ffa6c87d252b"
+    },
+    {
+      "file": "picolibc-COPYING.txt",
+      "source": "ESP-IDF/components/esp_libc/COPYING.picolibc",
+      "upstream": "https://github.com/espressif/esp-idf/blob/fff9895c82d744c7237be8847347bdd1b07c6643/components/esp_libc/COPYING.picolibc",
+      "sha256": "fa72ebf6e3c9b3d674f89da06648b0c17d3bcb1ce05ed5956cc102fba1e6964d"
+    }
+  ]
+}

@@ -1,0 +1,94 @@
+name: Verify and package firmware
+
+# Artifact-only automation. Publishing a Release remains a separate decision.
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  firmware:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      IDF_PATH: ${{ runner.temp }}/esp-idf
+      IDF_TOOLS_PATH: ${{ runner.temp }}/idf-tools
+      IDF_COMMIT: fff9895c82d744c7237be8847347bdd1b07c6643
+      IDF_PY_BUILD_JOBS: 4
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install host dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git wget flex bison gperf python3 python3-venv cmake ninja-build ccache libffi-dev libssl-dev dfu-util libusb-1.0-0-dev build-essential
+      - name: Install the exact supported ESP-IDF
+        run: |
+          git init "$IDF_PATH"
+          git -C "$IDF_PATH" remote add origin https://github.com/espressif/esp-idf.git
+          git -C "$IDF_PATH" fetch --depth 1 origin "$IDF_COMMIT"
+          git -C "$IDF_PATH" checkout --detach FETCH_HEAD
+          git -C "$IDF_PATH" submodule update --init --recursive --depth 1
+          test "$(git -C "$IDF_PATH" rev-parse HEAD)" = "$IDF_COMMIT"
+          "$IDF_PATH/install.sh" esp32s3
+      - name: Prepare and verify project-local lwIP
+        run: |
+          source "$IDF_PATH/export.sh"
+          python tools/prepare_lwip.py apply
+          python tools/prepare_lwip.py check
+      - name: Build public defaults and report space usage
+        run: |
+          source "$IDF_PATH/export.sh"
+          idf.py -B build-release -D SDKCONFIG="$PWD/build-release/sdkconfig" build
+          idf.py -B build-release size
+      - name: Run host and front-end regressions
+        run: |
+          source "$IDF_PATH/export.sh"
+          test_python="$(command -v python)"
+          PATH="/usr/bin:/bin:$PATH" "$test_python" -m unittest discover -s tests -v
+          node tests/management_feedback_harness.js
+          node tests/management_transport_harness.js
+      - name: Package and verify SDK-free firmware
+        run: |
+          source "$IDF_PATH/export.sh"
+          python tools/package_firmware.py --build-dir build-release --output-dir dist/esp32-socks5-gateway-n16r8
+          (
+            cd dist/esp32-socks5-gateway-n16r8
+            sha256sum -c SHA256SUMS
+            sha256sum -c firmware.zip.sha256
+          )
+          python -m zipfile -e dist/esp32-socks5-gateway-n16r8/firmware.zip "$RUNNER_TEMP/firmware-check"
+          python tools/flash_firmware.py --directory "$RUNNER_TEMP/firmware-check" --check
+          python -m esptool --chip esp32s3 merge-bin --output "$RUNNER_TEMP/official-factory.bin" 0x0 build-release/bootloader/bootloader.bin 0x8000 build-release/partition_table/partition-table.bin 0x10000 build-release/esp32-socks5-gateway.bin
+          cmp "$RUNNER_TEMP/official-factory.bin" dist/esp32-socks5-gateway-n16r8/factory.bin
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: esp32-socks5-gateway-n16r8-${{ github.sha }}
+          path: dist/esp32-socks5-gateway-n16r8/
+          if-no-files-found: error
+          retention-days: 14
+
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install isolated browser test tools
+        run: |
+          npm install --prefix "$RUNNER_TEMP/gateway-browser" --no-save playwright@1.62.1
+          "$RUNNER_TEMP/gateway-browser/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Exercise the actual management page
+        env:
+          NODE_PATH: ${{ runner.temp }}/gateway-browser/node_modules
+        run: node tests/management_browser_harness.js

@@ -14,7 +14,7 @@ This is an experimental project for learning ESP32 networking and small-scale us
 - [Performance and suitable uses](#performance-and-suitable-uses)
 - [Prepare hardware and software](#prepare-hardware-and-software)
 - [Prepare the upstream SOCKS5 service](#prepare-the-upstream-socks5-service)
-- [Install the toolchain and build](#install-the-toolchain-and-build)
+- [Choose firmware and flashing method](#choose-firmware-and-flashing-method)
 - [Flash and connect for the first time](#flash-and-connect-for-the-first-time)
 - [Daily use and status LED](#daily-use-and-status-led)
 - [Troubleshooting](#troubleshooting)
@@ -94,16 +94,13 @@ A different LED pin requires matching configuration. The current startup check r
 
 ### Software
 
-| Category | Dependency and purpose | Preparation |
-| --- | --- | --- |
-| Required: development tools | Git, Python ≥ 3.10 (3.12 recommended), CMake ≥ 3.22, Ninja | Official EIM checks/installs prerequisites on Windows; Linux packages are listed below. This IDF tool manifest recommends CMake 4.0.3 and Ninja 1.12.1 |
-| Required: SDK | Exact ESP-IDF v6.1 and esp-lwIP commits | See the commit table below; FreeRTOS and lwIP are included in ESP-IDF, not separate installations |
-| Automatically managed: toolchain | Xtensa GCC 15.2.0 for ESP32-S3 firmware; esptool, Python build tools, Component Manager | EIM or IDF scripts use this commit's tool/requirement manifests |
-| Automatically managed: components | cJSON 1.7.19, led_strip 3.0.3 | Declared in `main/idf_component.yml`, version/hash-pinned in `dependencies.lock`, downloaded into `managed_components/` at first build |
-| Required: use of the gateway | Browser, existing 2.4 GHz Wi-Fi, IPv4 / NO AUTH / UDP ASSOCIATE SOCKS5 service | User-provided; building and host tests do not require a live proxy |
-| Optional: development/testing | Linux system GCC/binutils, Node.js; ccache speeds repeated builds | GCC runs host C tests, Node.js runs frontend tests; neither is a firmware runtime dependency |
+| Purpose | What you need |
+| --- | --- |
+| Flash a precompiled BIN | Official esptool 5.5.0 (Python ≥ 3.10), or Espressif's Windows graphical tool; a serial driver when needed. **No ESP-IDF or project script required**. See [firmware flashing](docs/flash-prebuilt.md) |
+| Build firmware yourself | Git, Python, pinned ESP-IDF/toolchain and managed components; follow the complete [build guide](docs/build-and-flash.md) |
+| Use the gateway | Browser, an existing 2.4 GHz Wi-Fi network, and the SOCKS5 service described below |
 
-The management and first-use pages default to English. A Chinese first browser language (`zh` or `zh-*`) selects Simplified Chinese; other or unavailable preferences use English. A secondary Chinese preference does not override an English first preference. Serial commands are in English. System GCC and the ESP32 cross-compiler serve different purposes. Do not substitute the former for the firmware toolchain or update the dependency lock merely to make a build pass.
+The management and first-use pages default to English. A Chinese first browser language (`zh` or `zh-*`) selects Simplified Chinese; other or unavailable preferences use English. A secondary Chinese preference does not override an English first preference. Serial commands are in English.
 
 ## Prepare the upstream SOCKS5 service
 
@@ -132,224 +129,31 @@ Replace these examples with your network's actual settings. The firmware default
 
 If your upstream SOCKS5 service uses [Xray](https://github.com/XTLS/Xray-core), start with the [complete VLESS + TCP + REALITY client template](examples/xray-client-reality.json) and its [field placement and setup guide (Chinese)](examples/README.md). It runs on the LAN computer; replace all `<...>` placeholders with your LAN address and remote node parameters before checking or running it. The existing [SOCKS settings example](examples/xray-socks-settings.json) and DNS examples remain fragments for integration into an existing configuration. Other proxy software can work if it meets the requirements above. Keep an unauthenticated proxy accessible only to trusted networks.
 
-## Install the toolchain and build
+## Choose firmware and flashing method
 
-Use **PowerShell on Windows**, and **Bash on Linux/WSL2**; run only the commands for your platform. Avoid spaces and non-ASCII characters in SDK/project paths, for example by using `C:\esp` on Windows. These steps prepare a separate SDK directory without overwriting an installation used by other projects.
+You can flash a precompiled BIN **without installing ESP-IDF or running a project script**, or build from source when changing compiled defaults or developing the project.
 
-### 1. Install the matching ESP-IDF revision
-
-Transparent forwarding uses a small lwIP patch. lwIP is the TCP/IP networking library inside ESP-IDF. The patch depends on its source code, so a version string of “v6.1” alone is insufficient; these commits must match:
-
-| Dependency | Exact commit |
+| Goal | Guide |
 | --- | --- |
-| ESP-IDF v6.1 | `fff9895c82d744c7237be8847347bdd1b07c6643` |
-| esp-lwIP | `c6f2f878e7b0f86033214b85547d579be43351e3` |
+| First installation / reset | Write the complete `factory.bin` at `0x0`; **resets saved settings**. [Windows 11 / Linux guide](docs/flash-prebuilt.md) includes official CLI and Windows GUI steps |
+| Compatible application update | Write `app.bin` at `0x10000`; normally retains settings. Existing bootloader, partitions and settings must be compatible |
+| Build your own firmware | [Windows 11 / Linux / WSL2 build and flash](docs/build-and-flash.md): exact SDK commits, lwIP override, configuration, build, partitions, and troubleshooting |
 
-#### Windows 11: official EIM and PowerShell
+Use BIN files and their checksums/notices from a trusted [project release](https://github.com/noaic/esp32-socks5-gateway/releases) or successful firmware build artifact. The optional `firmware.zip` collects these files without host scripts. If no files are available, build from source. Default images use the AP credentials below and contain no upstream Wi-Fi credentials. **ESP32-S3 N16R8 is required**.
 
-1. Download the EIM GUI installer from [Espressif](https://dl.espressif.com/dl/eim/). Follow the prerequisite checks in the [official Windows guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/get-started/windows-setup.html). If Git is unavailable, install [Git for Windows](https://git-scm.com/install/windows) and open a new PowerShell. `winget` is not required.
-2. In ordinary PowerShell, put the exact commit in a **new** `C:\esp\esp-idf-gateway` directory. The preparation script accepts both LF and CRLF checkouts; no Git line-ending settings need to be changed:
-
-```powershell
-git --version
-New-Item -ItemType Directory -Force C:\esp | Out-Null
-git clone --no-checkout --depth 1 https://github.com/espressif/esp-idf.git C:\esp\esp-idf-gateway
-Set-Location C:\esp\esp-idf-gateway
-git fetch --depth 1 origin fff9895c82d744c7237be8847347bdd1b07c6643
-git checkout --detach fff9895c82d744c7237be8847347bdd1b07c6643
-git submodule update --init --recursive --depth 1
-```
-
-3. In EIM, choose **Custom Installation** and point its path to this existing Git directory. Official [Expert Installation](https://docs.espressif.com/projects/idf-im-ui/en/latest/expert_installation.html) supports using an existing repository without rewriting its contents. Install the tools for that checkout, including the compiler, CMake, Ninja, and Python environment. Use this directory rather than installing an arbitrary latest SDK for the build.
-4. Open the installation's PowerShell through EIM's **Manage Installations → Open IDF Terminal**, or its generated PowerShell shortcut. **Run subsequent Windows commands in that activated terminal.** A new ordinary PowerShell does not inherit the environment:
-
-```powershell
-python --version
-idf.py --version
-git -C "$env:IDF_PATH" rev-parse HEAD
-git -C "$env:IDF_PATH\components\lwip\lwip" rev-parse HEAD
-git -C "$env:IDF_PATH\components\lwip\lwip" ls-files --eol src/core/ipv4/ip4.c
-cmake --version
-ninja --version
-```
-
-Both commits must match the table. The EOL command is diagnostic: `i/lf w/lf` and `i/lf w/crlf` are both supported; the latter means Git checked out Windows line endings, not that the source was edited. An existing SDK need not be reinstalled for this difference. Use EIM's generated activation entry point. For legacy script installs, PowerShell runs `.\install.ps1 esp32s3` and `.\export.ps1` from the SDK directory; CMD uses `install.bat esp32s3` / `export.bat`. Windows does not use Bash's `source`.
-
-#### Linux: Ubuntu/Debian or Fedora, Bash
-
-For Ubuntu/Debian, use the [official prerequisite list](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/get-started/linux-macos-setup-legacy.html). Choose a release providing Python ≥ 3.10, such as Ubuntu 22.04 or newer:
-
-```bash
-sudo apt-get update
-sudo apt-get install git wget flex bison gperf python3 python3-pip python3-venv cmake ninja-build ccache libffi-dev libssl-dev dfu-util libusb-1.0-0
-```
-
-Fedora uses different package names and `dnf`; its Python package provides `venv`:
-
-```bash
-sudo dnf install git wget flex bison gperf python3 python3-pip cmake ninja-build ccache libffi-devel openssl-devel dfu-util libusb1
-```
-
-Prepare a separate SDK directory; `esp-idf-gateway` must not already exist:
-
-```bash
-mkdir -p ~/esp
-cd ~/esp
-
-git clone --no-checkout --depth 1 https://github.com/espressif/esp-idf.git esp-idf-gateway
-cd esp-idf-gateway
-git fetch --depth 1 origin fff9895c82d744c7237be8847347bdd1b07c6643
-git checkout --detach fff9895c82d744c7237be8847347bdd1b07c6643
-git submodule update --init --recursive --depth 1
-
-./install.sh esp32s3
-python3 tools/idf_tools.py install cmake ninja
-source ./export.sh
-```
-
-Installation downloads the matching compiler and Python dependencies. Explicitly requesting CMake/Ninja avoids outdated system versions. **Activate again in every new Bash**, then inspect the actual versions:
-
-```bash
-source ~/esp/esp-idf-gateway/export.sh
-idf.py --version
-git -C "$IDF_PATH" rev-parse HEAD
-git -C "$IDF_PATH/components/lwip/lwip" rev-parse HEAD
-cmake --version
-ninja --version
-```
-
-#### Can an existing installation be reused?
-
-Reuse an SDK only when both commits match, submodules are complete, and global lwIP source is unchanged. Activate it through its own entry point and run the checks above; “v6.1” alone is insufficient. Otherwise prepare a separate SDK, rather than running `git pull` or changing versions in a shared installation. Use EIM terminals for EIM installations and the matching `export` script for script installations.
-
-A shallow clone may make `idf.py --version` report `Git version unavailable` before reading the source version. Validate both exact commits and the patch checks rather than relying on a tag description.
-
-For WSL2, install inside the Linux distribution using the Linux steps; Windows compiler binaries cannot be reused directly. USB attachment is covered below. macOS users can consult the official guide; Bash project commands are the same.
-
-### 2. Get the project and prepare lwIP
-
-Windows, in activated PowerShell:
-
-```powershell
-git clone https://github.com/noaic/esp32-socks5-gateway.git C:\esp\esp32-socks5-gateway
-Set-Location C:\esp\esp32-socks5-gateway
-python tools/prepare_lwip.py apply
-python tools/prepare_lwip.py check
-```
-
-Linux/WSL2, in activated Bash:
-
-```bash
-git clone https://github.com/noaic/esp32-socks5-gateway.git ~/esp32-socks5-gateway
-cd ~/esp32-socks5-gateway
-python3 tools/prepare_lwip.py apply
-python3 tools/prepare_lwip.py check
-```
-
-If you already have the project, enter that checkout rather than cloning again. All subsequent project commands run from the **project root, containing `CMakeLists.txt`**.
-
-`patches/lwip-v6.1-transparent-tcp.patch` contains the `ip4.c` changes; `patches/lwip-v6.1.json` records the commits and original/patched SHA-256 hashes. The script copies the entire `$IDF_PATH/components/lwip` component, including its lwIP submodule, into project `components/lwip` and modifies only that copy. ESP-IDF's [same-name component precedence](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/api-guides/build-system.html#multiple-components-with-the-same-name) selects the project override, leaving the global SDK and other projects unaffected. The generated directory is Git-ignored.
-
-For `ip4.c` hash checks, CRLF is treated as LF in memory; the pinned hashes are unchanged. `apply` and `restore` write LF only to the verified project copy, and CRLF patch input is also supported without rewriting the patch file. `check` is read-only. Before copying or checking, `apply`/`check` also compare the **whole global lwIP component and submodule against their committed Git contents**, rejecting edited, missing, or extra source files even when HEAD matches. Text files allow LF/CRLF checkout differences; binary files must match byte for byte. Code/whitespace edits, a BOM, or lone CR differences are rejected. The local override must then match that verified SDK copy apart from patched `ip4.c`.
-
-These commands work in either activated terminal (Linux can also use `python3`):
-
-| Command | Purpose |
-| --- | --- |
-| `python tools/prepare_lwip.py apply` | Check revisions/content, create or reuse the local copy, normalize its `ip4.c` to LF, and patch it; safe to repeat |
-| `python tools/prepare_lwip.py check` | Read-only verification of revisions, LF-normalized original/patched hashes, and the complete component file list/content |
-| `python tools/prepare_lwip.py restore` | Reverse the verified local `ip4.c` patch and leave it as LF; no activated SDK needed. Keep the local component and do not disable transparent mode |
-
-`restore` verifies only the local `ip4.c` patch state; it is an offline reversal, not a full SDK/component integrity check. Run `apply` and `check` for the full verification.
-
-Default transparent mode requires another `apply` and `check` after `restore`; `check` rejects an unpatched copy. If an existing build used global lwIP, run `idf.py reconfigure` after preparing the override, then build. Revision errors identify the expected and actual commits; a hash error means changes beyond LF/CRLF. Back up and inspect unexpected SDK/local edits, or prepare a separate clean SDK; do not force overwrites. `apply`/`check` also reject other component changes, and writes through local symlinks are refused. An ESP-IDF/esp-lwIP upgrade may change the `ip4.c` path, hook placement, or interfaces, requiring a separate patch review/adaptation. Do not just change commits/hashes to bypass validation.
-
-### 3. Configure and build
-
-These configuration/build commands are the same in either activated terminal:
-
-```text
-idf.py menuconfig
-```
-
-Open `Transparent gateway Wi-Fi`:
-
-- For a first setup, you can leave the upstream `SSID` empty and configure it later on the management page. The AP starts, but the ESP32 does not attempt to join upstream Wi-Fi yet.
-- Change `SoftAP WPA2 password` to your own AP password, using 8–63 ASCII characters.
-- You can keep the AP name `ESP32-Transparent-Proxy`.
-- Keep other hardware/network defaults initially. Normal use does not require `Temporary gateway diagnostics`.
-
-Save, exit the menu, and run:
-
-```text
-idf.py build
-idf.py size
-```
-
-`build` generates firmware; `size` reports its memory footprint and does not flash the board. The first build downloads components and takes longer than subsequent builds.
-
-`sdkconfig.defaults` supplies initial ESP32-S3, Flash, PSRAM, and feature settings. It does not overwrite an existing `sdkconfig`, so check the board settings when reusing an older project configuration.
-
-Patch preparation, build, and size checks have been verified on Linux x86_64. Windows 11/EIM, distribution package installation, and WSL2 USB steps were checked against official instructions and still require validation on those systems and a physical board.
+The source-build guide preserves the complete setup commands. An arbitrary newer ESP-IDF is not interchangeable: the `ip4.c` patch and dependency pins must match.
 
 ## Flash and connect for the first time
 
 ### 1. Write the firmware to the board
 
-On Windows 11, compare **Device Manager → Ports (COM & LPT)** before/after connecting the board to find its COM port; install the vendor driver for its USB bridge when needed. On Linux, compare the serial device list and inspect permissions:
+Use the [precompiled-firmware guide](docs/flash-prebuilt.md) or the [source-build guide](docs/build-and-flash.md). Both explain ports, Linux permissions and WSL2 USB mapping. **`factory.bin` overwrites NVS settings, even without a full-Flash erase.** Compatible app-only or separate-image updates normally preserve NVS. Do not erase all Flash routinely.
 
-```bash
-ls /dev/ttyACM* /dev/ttyUSB* 2>/dev/null
-ls -l /dev/ttyACM0
-```
-
-`/dev/ttyACM0` and `COM5` are examples; substitute the actual port. macOS commonly uses `/dev/cu.*`. If the Linux device belongs to `dialout`, use `sudo usermod -aG dialout "$USER"`, then log out/in; handle other groups according to actual ownership, rather than routinely flashing as root.
-
-Linux, from the activated project terminal:
-
-```bash
-idf.py -p /dev/ttyACM0 flash monitor
-```
-
-A Windows activated PowerShell project terminal:
-
-```powershell
-idf.py -p COM5 flash monitor
-```
-
-`flash` writes the firmware, and `monitor` opens logs at **115200 baud**. Press `Ctrl+]` to exit ESP-IDF monitor. Flashing, monitoring, and other serial tools must not use the same device simultaneously.
-
-The current configuration uses a **UART0 console**. Prefer the board's UART / USB-UART connector; being able to flash over native USB does not mean that connector displays this firmware's UART logs. If automatic download-mode entry fails, use BOOT/EN according to the board's instructions.
-
-**WSL2 USB:** install [usbipd-win following Microsoft's instructions](https://learn.microsoft.com/en-us/windows/wsl/connect-usb) and start the WSL2 distribution. These are Windows PowerShell commands. Replace example BUSID `4-4` with the device from `usbipd list`; `bind` requires administrator privileges:
-
-```powershell
-usbipd list
-usbipd bind --busid 4-4
-usbipd attach --wsl --busid 4-4
-```
-
-Then find `/dev/ttyACM*` / `/dev/ttyUSB*` in WSL Bash and flash using the Linux command. A reset may re-enumerate the device, requiring attachment to be checked again. Windows and WSL serial tools cannot use the same USB device simultaneously.
-
-#### Partitions, images, and reflashing
-
-`partitions.csv` defines this layout. Remaining space on the 16 MB Flash is unallocated; there is no OTA or filesystem partition:
-
-| Partition | Offset | Size | Purpose |
-| --- | --- | --- | --- |
-| `nvs` | `0x9000` | `0x6000` (24 KiB) | Persistent configuration and other NVS data |
-| `phy_init` | `0xf000` | `0x1000` (4 KiB) | Reserved PHY initialization data; current configuration has no separate PHY image |
-| `factory` | `0x10000` | 4 MiB | Application |
-
-A normal build generates `build/bootloader/bootloader.bin` (starts the application), `build/partition_table/partition-table.bin` (describes the layout), and `build/esp32-socks5-gateway.bin` (application). Current `build/flash_args` places them at `0x0`, `0x8000`, and `0x10000`; `idf.py flash` uses those build arguments, so offsets need not be guessed.
-
-Normal flashing erases/writes the required image ranges; it is not `erase-flash`. With the same layout, existing NVS settings normally remain. A full erase clears network/management credentials, and padding in a merged full image can overwrite NVS too. Do not erase routinely for upgrades; save settings before changing partition layouts or incompatible configuration formats. Existing NVS settings take precedence over new compiled defaults.
-
-An exception is startup recovery from `ESP_ERR_NVS_NO_FREE_PAGES` or `ESP_ERR_NVS_NEW_VERSION_FOUND`: the current code erases NVS and retries, so settings can be lost. If startup fails before the hardware/NVS checks complete, serial recovery commands are not yet available; inspect boot logs first. See [recovery limits](docs/maintenance.md#tested-boundary).
+The console runs at **115200 baud on UART0**. Use the board's UART / USB-UART connector for logs and commands; a native USB connector that can flash may not carry UART logs. Close other serial tools before flashing.
 
 ### 2. Join the ESP32 Wi-Fi network
 
-Connect your phone or computer to `ESP32-Transparent-Proxy`, using the AP password you chose in `menuconfig`. The unchanged development default is `esp32proxy`; replace it before normal use.
+Connect your phone or computer to `ESP32-Transparent-Proxy`, using the AP password from your firmware package or your source-build configuration. The unchanged development default is `esp32proxy`; replace it before normal use.
 
 Without upstream settings, a phone may say this Wi-Fi has no Internet access. Choose to stay connected so you can open the local management page. During the first test, temporarily disabling mobile data or automatic network switching helps confirm that traffic is actually going through the ESP32.
 
@@ -371,7 +175,7 @@ The SOCKS5 server uses NO AUTH, so there are no SOCKS5 username/password fields.
 
 ### 4. Enter network and proxy settings
 
-In “Gateway configuration”, enter (English interface labels are used below):
+Open “Network settings” and enter (English interface labels are used below):
 
 | Page field | What to enter |
 | --- | --- |
@@ -406,7 +210,7 @@ Before confirming, check that STA has an IPv4 address, run “Run connection dia
 
 ## Daily use and status LED
 
-The management page shows runtime status, connected clients, per-client proxy traffic, and recent events. You can reconnect upstream Wi-Fi, close existing proxy connections, or restart the board. These actions can interrupt downloads/video; check the result and avoid repeatedly submitting an action.
+The management page first shows the connection overview, next-step advice, and connected devices. Expand Network settings, Connection diagnostics and Internet check, Device details/resources/events, or Connection maintenance when needed. Basic upstream settings remain together; local AP, DNS, and management-password fields are grouped inside the settings section. You can reconnect upstream Wi-Fi, close existing proxy connections, or restart the board. These actions can interrupt downloads/video; check the result and avoid repeatedly submitting an action.
 
 | Color | Meaning | Next step |
 | --- | --- | --- |
@@ -424,14 +228,10 @@ A successful result remains valid for 10 minutes. Normal automatic checks run ev
 
 Check from the nearest component outward: **client → ESP32 AP → upstream Wi-Fi → SOCKS5 → DNS / destination site**. Get one client working before adding a second.
 
+Build, SDK, patch, and tool-download problems are covered in [build troubleshooting](docs/build-and-flash.md#build-troubleshooting).
+
 | Symptom | Check first |
 | --- | --- |
-| `idf.py` not found | Activate ESP-IDF in this terminal, then enter the project directory |
-| Wrong Python / CMake / Ninja version or path | Python ≥ 3.10, CMake ≥ 3.22, and the selected SDK's terminal; do not mix Windows and WSL toolchains |
-| lwIP revision/hash mismatch | Check both pinned commits and complete submodules. LF/CRLF alone is accepted; inspect actual edits with `git diff` in the SDK's lwIP repository, or back up the project override before recreating it. Do not force the patch |
-| Build still refers to another SDK or global lwIP | Select the correct environment and run `idf.py reconfigure`; if stale cache remains, run `idf.py fullclean` inside the project and rebuild |
-| Component download fails during build | Read the first download error; check access to GitHub, Espressif downloads, and the component registry; keep TLS/hash verification enabled |
-| Serial port missing or flashing fails | Data cable, board USB connector, driver, port permissions, WSL USB attachment, and other programs using the port |
 | Startup reports a PSRAM error | Board really matches N16R8/Octal PSRAM settings and has stable power |
 | Phone reports no Internet | Stay connected during initial setup; afterward check STA and proxy. Prevent mobile-data switching while testing |
 | Management page does not open | Joined the ESP32 AP, explicit `http://`, current address after an X change, and a fresh DHCP lease |
@@ -471,127 +271,20 @@ After `reset-admin`, open the page and set a new password. After `reset-network`
 
 The Web “Restore default configuration” action also keeps the management password, but requires the 180-second confirmation after restarting. Serial `reset-network` uses the 30-second code above. **RST/EN and power cycling only restart the board; they do not clear saved passwords/network settings. BOOT is not a recovery-menu button.** Routine recovery does not require erasing all Flash.
 
-On Linux/WSL2, capture logs and send line-based commands through one connection from the project root:
-
-```bash
-python tools/uart_capture.py --port /dev/ttyACM0 --no-reset --interactive --timestamps --seconds 0
-```
-
-The tool's `--interactive` stdin handling is POSIX-only and sends a line after Enter. On Windows, use `idf.py -p COM5 monitor` or a serial terminal for commands; log-only capture works with `--port COM5` and without `--interactive`. Timestamped capture displays prompts/echo immediately, even before a newline. Exit other serial tools first. `--seconds 0` reads until interrupted. `--no-reset` avoids the tool's active reset, but adapter/driver behavior can still affect reset signals.
+For log capture and POSIX line-based input, see the [serial tools guide](tools/README.md).
 
 ## Development and tests
 
-### A simple view of the implementation
+The application uses ESP-IDF drivers/services, FreeRTOS tasks, and the lwIP TCP/IP stack. A project-local lwIP patch intercepts client packets, records their original destination, and restores reply addresses; TCP uses SOCKS5 `CONNECT`, while UDP uses `UDP ASSOCIATE`. The global SDK remains unchanged.
 
-`main/` defines gateway behavior using ESP-IDF's Wi-Fi, `esp_netif`, socket, HTTP, and NVS APIs. **FreeRTOS is the scheduler included in ESP-IDF**, running TCP/UDP and maintenance tasks with queues/locks. **lwIP is its TCP/IP stack**, handling IPv4, TCP handshakes, retransmission, and related protocols. The application chooses forwarding behavior, the SDK provides drivers/services, FreeRTOS schedules execution, and lwIP handles networking. No separate operating-system installation is needed on the board.
+Read [implementation and development](docs/development.md) for the packet path, module/source map, regression commands, and tools overview. [Build and flash](docs/build-and-flash.md) explains exact dependencies and the lwIP `apply` / `check` / `restore` workflow.
 
-Think of the ESP32 as an intermediary that receives and passes on data:
+- [Document index](docs/README.md): all current guides and historical records.
+- [Maintenance and recovery](docs/maintenance.md): configuration trials and recovery boundaries.
+- [Performance and validation](docs/performance.md): historical measurements and test limits.
+- [Tool usage](tools/README.md): serial capture, probes, benchmarks, and packaging.
 
-- **TCP**, used by many webpage connections, provides reliable transport. The gateway remembers the client's intended destination, asks the proxy to connect using SOCKS5 `CONNECT`, and returns the response to the client.
-- **UDP**, used by ordinary DNS queries and some real-time traffic, uses `UDP ASSOCIATE` to obtain relay information. Forwarded packets carry their destination, and separate flows keep their own state.
-- **DNS** converts names into IP addresses. Default DHCP tells clients to use `1.1.1.1`. The ESP32 does not run a local DNS service; ordinary DNS UDP traffic is forwarded through SOCKS5 too.
-- **NVS** is the area of Flash used for persistent settings. That is why settings survive normal restarts and application flashing does not automatically replace existing network settings.
-
-Total capacity is 64 active TCP relays and 32 UDP flows. The 512 destination/closing-state mappings have the per-client limits described above; **this does not mean 512 simultaneous forwarded TCP connections**. lwIP handles underlying TCP behavior, such as retransmission, while fixed application loops service multiple connections.
-
-### Follow one webpage's TCP connection
-
-**Why change `ip4.c`?** A client's website request is addressed to a remote host, so an ordinary local application socket does not receive that TCP connection. The patch adds an input hook after IPv4 validation and before local-address acceptance, allowing the gateway to record/rewrite the destination, plus an output hook after header preparation and before network-interface output to restore the remote address. Rewriting uses private packet copies so lwIP's retransmission buffers stay intact. Opening a SOCKS5 socket alone cannot provide the interception/address restoration used here, while the application need not reimplement TCP. See [ESP-IDF's lwIP documentation](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/api-guides/lwip.html).
-
-Suppose a phone connects to a website at `203.0.113.10:443`; this address is just an example:
-
-1. The phone sends packets to its default gateway, the ESP32.
-2. The project-local lwIP patch calls gateway code from the IPv4 processing path. It validates the packet, records the client and original destination, redirects the TCP packet to a local ESP32 listener, and updates checksums so the receiver can validate the packet.
-3. lwIP handles this local TCP connection. The application reads data through a socket, a programming interface for sending/receiving network data, rather than implementing TCP handshakes and retransmission itself.
-4. The TCP forwarding loop negotiates SOCKS5 NO AUTH and sends `CONNECT`, asking the proxy to connect to the original destination. It then passes data between the two connections.
-5. TCP packets returning to the phone use the mapping to restore the original remote address and correct their checksums. The phone still sees a connection to the website.
-
-```mermaid
-flowchart LR
-    Client["Phone's TCP packets"] --> Hook["IPv4 hooks<br/>Record destination and rewrite addresses"]
-    Hook --> Stack["Local lwIP connection"]
-    Stack --> Relay["TCP forwarding loop"]
-    Relay -->|SOCKS5 CONNECT| Proxy["Upstream proxy"]
-    Proxy --> Site["Original website"]
-```
-
-“Transparent” describes the client's experience. Raw TCP packets are not simply inserted into SOCKS5; lwIP handles the connection, and the gateway forwards its data. HTTPS encryption remains between browser and website; the gateway does not decrypt webpage content.
-
-### UDP, concurrency, and saved settings
-
-UDP has no TCP-style connection setup, but SOCKS5 UDP forwarding still needs a TCP control connection. Each UDP flow records its client/destination, negotiates `UDP ASSOCIATE`, and sends UDP data with a SOCKS5 destination header to the relay. Replies are checked against the flow and client identity before delivery. The code reserves some capacity and negotiation opportunities for DNS, reducing cases where other UDP traffic prevents name resolution by exhausting resources.
-
-TCP and UDP each use a fixed forwarding loop: check which connections can send/receive, handle a portion of data, then service others. There is no task per connection. Queues and wait times are bounded; larger TCP data buffers use PSRAM, while frequently accessed TCP state stays in internal RAM. This controls memory use without removing radio or total connection limits.
-
-Configuration management stores current and previous settings. New network settings are tried first, kept after confirmation, or rolled back on timeout. Management/maintenance tasks are separate from forwarding loops, so viewing status does not restart the proxy for each page request. Each client has a connection identity and counters to identify reply ownership and clean up connections when it leaves.
-
-Clients must obtain their IPv4 address through the ESP32's DHCP server: manually assigned static IPs are not registered for forwarding. Client identities protect against stale replies after reconnecting, but are not authentication against IP spoofing. Traffic counters measure relayed TCP/UDP **payload bytes**, excluding protocol headers; they are not radio byte counters or proof of delivery to an application.
-
-The management server bounds network receive/send time to **5 seconds per request**, with a 1024-byte request-body limit. Rejected or partially read bodies close the connection instead of draining an arbitrary amount of data. This bounds network stalls in the HTTP task that also handles configuration rollback. Unsaved Internet-check preferences remain in the form during status polling; event names follow the page language.
-
-To explore the source, start with the matching modules:
-
-| Topic | Main source files |
-| --- | --- |
-| Startup, AP/STA, and network events | [app_main.c](main/app_main.c) |
-| TCP input, address rewriting, and destination records | [tcp_poc.c](main/tcp_poc.c), [packet_rewrite.c](main/packet_rewrite.c), [flow_table.c](main/flow_table.c) |
-| TCP SOCKS5 negotiation and bidirectional forwarding | [socks_relay.c](main/socks_relay.c) |
-| UDP interception, association, and packet format | [udp_gateway.c](main/udp_gateway.c), [udp_relay.c](main/udp_relay.c), [socks_udp.c](main/socks_udp.c) |
-| Client ownership and counters | [ap_clients.c](main/ap_clients.c) |
-| Settings, confirmation, and rollback | [gateway_settings.c](main/gateway_settings.c), [web_management.c](main/web_management.c) |
-| HTTP transport deadlines and connection cleanup | [management_http.c](main/management_http.c) |
-| Maintenance jobs and connectivity checks | [gateway_control.c](main/gateway_control.c), [gateway_probe.c](main/gateway_probe.c) |
-
-See [architecture](docs/architecture.md) for the complete packet path and module responsibilities. For a first setup, learn the configuration steps first and explore the implementation when useful.
-
-### Run the existing regression tests
-
-“Host tests” compile and execute parts of the C implementation on your development computer; no ESP32 board is needed. Build the firmware successfully once first so the pinned cJSON source exists in `managed_components/`.
-
-On Linux, in an activated ESP-IDF project terminal, make system GCC/binutils and Node.js available, then run:
-
-```bash
-# Remember the current interpreter before PATH changes select another Python.
-HOST_PYTHON="$(command -v python)"
-PATH=/usr/bin:/bin:$PATH "$HOST_PYTHON" -m unittest discover -s tests -v
-node tests/management_feedback_harness.js
-node tests/management_transport_harness.js
-```
-
-The ESP-IDF Python environment includes pyserial/esptool, which the UART tests need. The current suite has **87 firmware/tool host regressions and 19 lwIP preparation regressions**, plus two frontend feedback/compatibility harnesses. The preparation tests use isolated temporary Git repositories to cover LF/CRLF, repeat operations, read-only checks, and rejection of unexpected edits. HTTP deadline tests use real host sockets; serial echo/prompt tests use a pseudo-terminal with a mocked UART driver. Check actual counts, failures, and skips. Passing these checks does not replace Wi-Fi, power-loss, or long-running hardware tests.
-
-### Tools at a glance
-
-Run these from the project root. Only lwIP preparation is required for a firmware build; the others are optional troubleshooting/development tools. See the [tool usage guide](tools/README.md) for complete commands, platform limits, and test setup.
-
-| Tool | Use |
-| --- | --- |
-| `prepare_lwip.py` | `apply` prepares the override, `check` verifies it, `restore` reverses the local patch |
-| `uart_capture.py` | Save serial logs; Linux/WSL2 can also send commands with `--interactive` |
-| `probe_upstream_udp.py`, `probe_upstream_quic.py` | Test SOCKS UDP/DNS or QUIC from the computer directly; these bypass the ESP32 |
-| `test_stream_server.py`, `throughput_bench.html` | Host a LAN test service/page to measure throughput from an AP client |
-| `test_transparent_echo.py`, `test-transparent-echo.ps1` | Check transparent TCP using a dedicated echo target; a normal HTTPS website is not an echo service |
-| `collect_link_bench.py`, `snapshot_manifest.py` | Extract supported diagnostic UART reports; create/check a local file inventory |
-
-### Repository layout and further reading
-
-| Path | Contents |
-| --- | --- |
-| `main/` | Firmware source and embedded management pages |
-| `patches/` | lwIP patch and revision/hash metadata |
-| `tools/` | Patch preparation, UART capture, network probes, and benchmarks |
-| `tests/` | C/Python host tests and JavaScript frontend tests |
-| `examples/` | Complete Xray client example, field placement guide, and configuration fragments |
-| `sdkconfig.defaults` | Initial hardware and feature defaults |
-| `dependencies.lock` | Firmware component version record |
-| `docs/` | Architecture, maintenance, performance, and development notes |
-
-- [Documentation index](docs/README.md)
-- [Maintenance and recovery](docs/maintenance.md)
-- [Performance and validation](docs/performance.md): full measurement records, memory samples, and validation limits.
-- [Development history](docs/history/README.md): includes experiments that were later reverted. For everyday behavior, prefer this README and the top-level guides in `docs/`.
-
-`sdkconfig`, `build/`, `managed_components/`, the local lwIP copy, and test outputs are generated. Check `git status` before committing; keep Wi-Fi passwords, personal configuration, logs, and local firmware artifacts out of the repository.
+Generated build files, logs, personal configurations, and firmware packages can contain sensitive information. Check `git status` before sharing them.
 
 ## Scope and security
 
@@ -600,3 +293,7 @@ The gateway supports IPv4, SOCKS5 NO AUTH, TCP, and UDP forwarding. It does not 
 Two clients share one 2.4 GHz radio and total forwarding capacity. Client limits do not guarantee equal bandwidth. This project is unsuitable as a replacement for equipment requiring many users, high throughput, or full routing features. PSRAM adds memory, but Wi-Fi/lwIP still depend on limited internal RAM. Long-term stability, interrupted Flash writes, and real upstream outages need further validation.
 
 Management is available only on the AP, but uses HTTP. Management passwords/network settings are stored unencrypted in NVS. Serial recovery assumes physical access and has no login authentication; secure boot and Flash encryption are not enabled. Set up the device from a trusted client/network, choose your own passwords, and keep the management page and unauthenticated proxy off the public Internet.
+
+## License and upstream notices
+
+Original project code is provided under the [MIT License](LICENSE). Third-party code and adapted examples retain their own licenses and copyright notices; see [third-party notices](THIRD_PARTY_NOTICES.md). Firmware packages include the applicable license texts. MIT does not replace upstream licenses.

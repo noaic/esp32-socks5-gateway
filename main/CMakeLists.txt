@@ -5,7 +5,7 @@ endif()
 idf_component_register(SRCS "serial_recovery.c" "serial_commands.c" "serial_console.c" "gateway_control.c" "gateway_probe.c" "gateway_state.c" "gateway_settings.c" "settings_validation.c" "management_request.c" "management_http.c" "web_management.c" "app_main.c" "ap_clients.c" "tcp_poc.c" "packet_rewrite.c" "flow_table.c" "socks_relay.c" "socks_udp.c" "dns_flow.c" "udp_relay.c" "udp_gateway.c" "net_diagnostics.c" "cpu_profile.c" "link_probe.c" "diagnostic_bench.c" "diagnostic_sta.c"
     INCLUDE_DIRS "."
     PRIV_REQUIRES esp_driver_uart esp_wifi esp_event esp_netif nvs_flash esp_timer
-                  esp_psram esp_hw_support esp_system spi_flash heap lwip vfs esp_http_server mbedtls espressif__cjson espressif__led_strip
+                  esp_psram esp_hw_support esp_system esp_app_format spi_flash heap lwip vfs esp_http_server mbedtls espressif__cjson espressif__led_strip
     EMBED_TXTFILES ${diag_assets})
 
 # Observe existing calls without patching ESP-IDF/esp-lwIP or replacing the

@@ -7,6 +7,7 @@
 /managed_components/
 /components/lwip/
 /build-snapshots/
+/dist/
 /tests/.out/
 __pycache__/
 *.py[cod]

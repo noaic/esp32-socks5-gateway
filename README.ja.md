@@ -14,7 +14,7 @@ ESP32 のネットワーク開発を学ぶ場合や、小規模な利用を想�
 - [性能と適した用途](#性能と適した用途)
 - [ハードウェアとソフトウェアの準備](#ハードウェアとソフトウェアの準備)
 - [上流の SOCKS5 サービスを準備する](#上流の-socks5-サービスを準備する)
-- [開発ツールのインストールとビルド](#開発ツールのインストールとビルド)
+- [ファームウェアと書き込み方法を選ぶ](#ファームウェアと書き込み方法を選ぶ)
 - [書き込みと初回の接続](#書き込みと初回の接続)
 - [日常の操作と状態 LED](#日常の操作と状態-led)
 - [困ったときの確認手順](#困ったときの確認手順)
@@ -94,16 +94,13 @@ LED ピンが異なる場合は設定を合わせてください。現在の起�
 
 ### ソフトウェア
 
-| 種類 | 依存関係と用途 | 準備方法 |
-| --- | --- | --- |
-| 必須：開発ツール | Git、Python ≥ 3.10（3.12 推奨）、CMake ≥ 3.22、Ninja | Windows は公式 EIM、Linux は後述のシステムパッケージ。指定 IDF の推奨は CMake 4.0.3、Ninja 1.12.1 |
-| 必須：SDK | 指定コミットの ESP-IDF v6.1 と esp-lwIP | 後述の表を参照。FreeRTOS と lwIP は ESP-IDF に含まれ、別途インストールしません |
-| 自動管理：ツールチェーン | ESP32-S3 用 Xtensa GCC 15.2.0、esptool、Python ビルドツール、Component Manager | EIM または IDF スクリプトが、このコミットの一覧に従って取得 |
-| 自動管理：部品 | cJSON 1.7.19、led_strip 3.0.3 | `main/idf_component.yml` に宣言し、`dependencies.lock` で版とハッシュを固定。初回ビルドで `managed_components/` に取得 |
-| 必須：利用環境 | ブラウザー、既存の 2.4 GHz Wi-Fi、IPv4 / NO AUTH / UDP ASSOCIATE の SOCKS5 サービス | 利用者が準備。ビルドとホストテストだけなら実際のプロキシは不要 |
-| 任意：開発テスト | Linux のシステム GCC/binutils、Node.js。ccache は再ビルドを高速化 | GCC はホスト C テスト、Node.js はフロントエンドテスト用で、ファームウェアの実行依存ではありません |
+| 用途 | 必要なもの |
+| --- | --- |
+| ビルド済み BIN を書き込む | 公式 esptool 5.5.0（Python ≥ 3.10）、または Espressif の Windows GUI。必要に応じたシリアルドライバー。**ESP-IDF や独自スクリプトは不要**。[書き込みガイド](docs/flash-prebuilt.ja.md)を参照 |
+| 自分でビルドする | Git、Python、指定 ESP-IDF/ツールチェーンと管理部品。[ビルドガイド](docs/build-and-flash.ja.md)の全手順を使用 |
+| ゲートウェイを使う | ブラウザー、既存の 2.4 GHz Wi-Fi、後述の SOCKS5 サービス |
 
-管理画面と初回設定画面は既定で英語です。ブラウザーの最優先言語が中国語（`zh` または `zh-*`）なら簡体字中国語、それ以外や判定できない場合は英語を表示します。英語が優先で中国語が第 2 候補の場合も英語です。シリアルコマンドは英語です。システム GCC と ESP32 用コンパイラーは別の用途です。ファームウェア用の代わりに前者を使ったり、ビルド成功のためだけにロックファイルを更新したりしないでください。
+管理画面と初回設定画面は既定で英語です。ブラウザーの最優先言語が中国語（`zh` または `zh-*`）なら簡体字中国語、それ以外や判定できない場合は英語です。英語が優先で中国語が第 2 候補の場合も英語です。シリアルコマンドは英語です。
 
 ## 上流の SOCKS5 サービスを準備する
 
@@ -132,224 +129,31 @@ LED ピンが異なる場合は設定を合わせてください。現在の起�
 
 上流の SOCKS5 サービスに [Xray](https://github.com/XTLS/Xray-core) を使う場合は、[VLESS + TCP + REALITY の完全なクライアント設定テンプレート](examples/xray-client-reality.json)と [フィールドの配置・使用ガイド（中国語）](examples/README.md)から始めてください。LAN 内のパソコンで動作します。すべての `<...>` プレースホルダーを自分の LAN アドレスとリモートノードの値に置き換えてから、設定の検証と起動を行ってください。既存の [SOCKS 設定例](examples/xray-socks-settings.json)と DNS 設定例は、既存設定に組み込むための部分設定です。上記の条件を満たすほかのプロキシソフトも使用できます。認証なしのプロキシは、信頼できるネットワークだけに公開してください。
 
-## 開発ツールのインストールとビルド
+## ファームウェアと書き込み方法を選ぶ
 
-Windows は **PowerShell**、Linux / WSL2 は **Bash** を使います。自分の環境に対応するコマンドだけ実行してください。SDK とプロジェクトのパスは空白や非 ASCII 文字を避け、Windows なら `C:\esp` などを使います。ほかのプロジェクトで使う ESP-IDF を上書きせず、別のディレクトリに準備します。
+ビルド済み BIN なら **ESP-IDF の導入や独自スクリプトの実行は不要**です。コンパイル時の既定値を変えたい場合や開発する場合はソースからビルドします。
 
-### 1. 対応する ESP-IDF をインストールする
-
-透過転送には、小さな lwIP パッチを使っています。lwIP は ESP-IDF 内部で TCP/IP 通信を処理するライブラリです。パッチは具体的なソースコードに依存するため、「v6.1」という表示だけでは不十分です。次のコミットを合わせてください。
-
-| 依存関係 | 正確なコミット |
+| 目的 | ガイド |
 | --- | --- |
-| ESP-IDF v6.1 | `fff9895c82d744c7237be8847347bdd1b07c6643` |
-| esp-lwIP | `c6f2f878e7b0f86033214b85547d579be43351e3` |
+| 初回導入 / 初期化 | 完全な `factory.bin` を `0x0` に書くと、**保存設定を初期化**します。[Windows 11 / Linux ガイド](docs/flash-prebuilt.ja.md)に公式 CLI と Windows GUI の手順があります |
+| 互換性のあるアプリ更新 | `app.bin` を `0x10000` に書き、通常は設定を保持。既存のブートローダー、配置、設定との互換性が必要 |
+| 自分でビルドする | [Windows 11 / Linux / WSL2 ビルドと書き込み](docs/build-and-flash.ja.md)：指定 SDK コミット、lwIP Override、設定、ビルド、パーティション、問題の確認 |
 
-#### Windows 11：公式 EIM と PowerShell
+信頼できる[プロジェクトのリリース](https://github.com/noaic/esp32-socks5-gateway/releases)、または成功したビルド成果物から BIN、チェックサム、著作権表示を入手します。任意の `firmware.zip` はこれらをまとめ、ホスト用スクリプトは含めません。成果物がなければソースからビルドします。既定イメージは後述の AP 情報を使い、上流 Wi-Fi の認証情報を含めません。**ESP32-S3 N16R8** が必要です。
 
-1. [Espressif の公式ページ](https://dl.espressif.com/dl/eim/)から EIM の GUI インストーラーを取得します。[Windows 公式ガイド](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/get-started/windows-setup.html)の前提条件チェックを行い、Git が使えなければ [Git for Windows](https://git-scm.com/install/windows)を入れて新しい PowerShell を開いてください。`winget` は必須ではありません。
-2. 通常の PowerShell で、**まだ存在しない** `C:\esp\esp-idf-gateway` に指定コミットを取得します。準備スクリプトは LF と CRLF の両方に対応するため、Git の改行設定を変更する必要はありません。
-
-```powershell
-git --version
-New-Item -ItemType Directory -Force C:\esp | Out-Null
-git clone --no-checkout --depth 1 https://github.com/espressif/esp-idf.git C:\esp\esp-idf-gateway
-Set-Location C:\esp\esp-idf-gateway
-git fetch --depth 1 origin fff9895c82d744c7237be8847347bdd1b07c6643
-git checkout --detach fff9895c82d744c7237be8847347bdd1b07c6643
-git submodule update --init --recursive --depth 1
-```
-
-3. EIM の **Custom Installation** で、この既存 Git ディレクトリを指定します。公式の [Expert Installation](https://docs.espressif.com/projects/idf-im-ui/en/latest/expert_installation.html)は既存リポジトリを変更せずに利用できます。このチェックアウトに対応するコンパイラー、CMake、Ninja、Python 環境を準備してください。別の最新 SDK をそのまま使う方法ではありません。
-4. EIM の **Manage Installations → Open IDF Terminal**、または生成された PowerShell ショートカットから、該当する環境を開きます。**以降の Windows コマンドは、この有効化済みターミナルで実行します。** 普通の PowerShell を新しく開いても自動では有効になりません。
-
-```powershell
-python --version
-idf.py --version
-git -C "$env:IDF_PATH" rev-parse HEAD
-git -C "$env:IDF_PATH\components\lwip\lwip" rev-parse HEAD
-git -C "$env:IDF_PATH\components\lwip\lwip" ls-files --eol src/core/ipv4/ip4.c
-cmake --version
-ninja --version
-```
-
-両コミットが表と一致することを確認してください。改行コマンドは診断用で、`i/lf w/lf` と `i/lf w/crlf` の両方に対応します。後者は Git が Windows の改行で取得したことを示し、ソースの編集とは限りません。この差だけで SDK を再インストールする必要はありません。EIM は生成された入口で有効化し、従来方式なら SDK 内の PowerShell で `.\install.ps1 esp32s3` / `.\export.ps1`、CMD で `install.bat esp32s3` / `export.bat` を使います。Windows で Bash の `source` は使いません。
-
-#### Linux：Ubuntu/Debian または Fedora、Bash
-
-Ubuntu/Debian では [公式の依存パッケージ一覧](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/get-started/linux-macos-setup-legacy.html)を使います。Ubuntu 22.04 以降など、Python ≥ 3.10 を提供する版を選んでください。
-
-```bash
-sudo apt-get update
-sudo apt-get install git wget flex bison gperf python3 python3-pip python3-venv cmake ninja-build ccache libffi-dev libssl-dev dfu-util libusb-1.0-0
-```
-
-Fedora はパッケージ名が異なり、`dnf` を使います。Python パッケージに `venv` が含まれます。
-
-```bash
-sudo dnf install git wget flex bison gperf python3 python3-pip cmake ninja-build ccache libffi-devel openssl-devel dfu-util libusb1
-```
-
-SDK を別ディレクトリに準備します。`esp-idf-gateway` はまだ存在しないものとします。
-
-```bash
-mkdir -p ~/esp
-cd ~/esp
-
-git clone --no-checkout --depth 1 https://github.com/espressif/esp-idf.git esp-idf-gateway
-cd esp-idf-gateway
-git fetch --depth 1 origin fff9895c82d744c7237be8847347bdd1b07c6643
-git checkout --detach fff9895c82d744c7237be8847347bdd1b07c6643
-git submodule update --init --recursive --depth 1
-
-./install.sh esp32s3
-python3 tools/idf_tools.py install cmake ninja
-source ./export.sh
-```
-
-インストーラーが対応するコンパイラーと Python 依存関係を取得します。CMake/Ninja を明示的に取得すると、古いシステム版を避けられます。**新しい Bash を開くたびに有効化し直し**、実際の版を確認します。
-
-```bash
-source ~/esp/esp-idf-gateway/export.sh
-idf.py --version
-git -C "$IDF_PATH" rev-parse HEAD
-git -C "$IDF_PATH/components/lwip/lwip" rev-parse HEAD
-cmake --version
-ninja --version
-```
-
-#### 既存の環境を再利用できる？
-
-両方のコミットが一致し、サブモジュールが揃い、全体の lwIP ソースが未変更の場合だけ再利用できます。その環境自身の入口で有効化して上記を確認してください。「v6.1」だけでは判断できません。一致しなければ別の SDK を作り、共有の SDK に直接 `git pull` したり版を切り替えたりしないでください。EIM は EIM のターミナル、スクリプト方式は対応する `export` を使います。
-
-浅い clone では `idf.py --version` が `Git version unavailable` と表示してからソースの版を読む場合があります。タグ表示だけでなく、両コミットとパッチ検証で確認してください。
-
-WSL2 は Linux ディストリビューション内で Linux の手順を実行し、Windows のコンパイラーをそのまま再利用しません。USB 接続は後述します。macOS は公式ガイドを参照してください。Bash のプロジェクトコマンドは同じです。
-
-### 2. プロジェクトを取得し、lwIP を準備する
-
-Windows の有効化済み PowerShell：
-
-```powershell
-git clone https://github.com/noaic/esp32-socks5-gateway.git C:\esp\esp32-socks5-gateway
-Set-Location C:\esp\esp32-socks5-gateway
-python tools/prepare_lwip.py apply
-python tools/prepare_lwip.py check
-```
-
-Linux / WSL2 の有効化済み Bash：
-
-```bash
-git clone https://github.com/noaic/esp32-socks5-gateway.git ~/esp32-socks5-gateway
-cd ~/esp32-socks5-gateway
-python3 tools/prepare_lwip.py apply
-python3 tools/prepare_lwip.py check
-```
-
-すでに取得済みなら、そのディレクトリに移動してください。以降のプロジェクトコマンドは、**`CMakeLists.txt` があるプロジェクトのルート**で実行します。
-
-`patches/lwip-v6.1-transparent-tcp.patch` は `ip4.c` の変更、`patches/lwip-v6.1.json` はコミットと変更前後の SHA-256 を記録します。スクリプトは `$IDF_PATH/components/lwip` のコンポーネント全体と lwIP サブモジュールを、プロジェクトの `components/lwip` にコピーし、そのコピーだけを変更します。ESP-IDF の [同名コンポーネントの優先順位](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/api-guides/build-system.html#multiple-components-with-the-same-name)により、プロジェクト側が使われます。全体の SDK やほかのプロジェクトには影響せず、生成ディレクトリは Git の対象外です。
-
-`ip4.c` のハッシュ検証では、メモリー上で CRLF を LF として扱い、既存の固定ハッシュを維持します。`apply` と `restore` は検証済みのプロジェクト側のコピーだけを LF で保存します。パッチが CRLF でも、そのファイルを書き換えずに利用できます。`check` は読み取り専用です。コピーや検証の前に、`apply`/`check` は **SDK 全体の lwIP コンポーネントとサブモジュールを Git のコミット内容と比較**します。HEAD が正しくても、編集、欠落、追加されたソースファイルは拒否します。テキストは LF/CRLF のチェックアウト差を許可し、バイナリーはバイト単位で一致する必要があります。コードや空白の編集、BOM、単独の CR の差は許可しません。ローカルコピーも、パッチ済みの `ip4.c` 以外は検証済み SDK と一致する必要があります。
-
-次のコマンドは、どちらの有効化済みターミナルでも使えます。Linux では `python3` も使えます。
-
-| コマンド | 用途 |
-| --- | --- |
-| `python tools/prepare_lwip.py apply` | 版と内容を確認し、コピーを作成または再利用。`ip4.c` を LF にしてパッチを適用。繰り返し実行可能 |
-| `python tools/prepare_lwip.py check` | 読み取り専用で、コミット、LF として計算した元/適用後のハッシュ、全ファイルの一覧と内容を検証 |
-| `python tools/prepare_lwip.py restore` | 検証済みのローカル `ip4.c` を逆適用で LF に戻す。SDK の有効化は不要。ディレクトリを残し、透過機能は自動で無効にしません |
-
-`restore` はローカル `ip4.c` のパッチ状態だけを確認するオフライン復元です。SDK/コンポーネント全体の整合性確認には `apply` と `check` を使ってください。
-
-既定の透過機能では、`restore` 後に再び `apply` と `check` が必要です。`check` は未適用のコピーを拒否します。以前のビルドが全体の lwIP を参照していた場合、コピー準備後に `idf.py reconfigure` を実行してからビルドします。版のエラーには期待値と実際のコミットが表示され、ハッシュのエラーは LF/CRLF 以外の差を示します。SDK やコピーの編集をバックアップして確認するか、別の正常な SDK を準備し、強制上書きは避けてください。`apply` と `check` はほかのファイルの変更も拒否し、書き込み時はローカルのシンボリックリンクも拒否します。ESP-IDF/esp-lwIP の更新で `ip4.c` のパス、フック位置、インターフェースが変わる可能性があり、パッチの再検討と適合が必要です。コミットやハッシュだけ変えて検証を回避しないでください。
-
-### 3. 設定してビルドする
-
-次の設定・ビルドコマンドは、両方の有効化済みターミナルで同じです。
-
-```text
-idf.py menuconfig
-```
-
-`Transparent gateway Wi-Fi` を開きます。
-
-- 初回は上流の `SSID` を空にして、管理ページから後で設定できます。この場合 AP は起動しますが、上流 Wi-Fi への接続は試みません。
-- `SoftAP WPA2 password` を自分の AP パスワードに変更します。ASCII 文字で 8～63 文字にしてください。
-- AP 名は `ESP32-Transparent-Proxy` のままで構いません。
-- ほかのハードウェア / ネットワーク設定は、まず既定値を使います。通常の利用で `Temporary gateway diagnostics` を有効にする必要はありません。
-
-保存してメニューを閉じ、次を実行します。
-
-```text
-idf.py build
-idf.py size
-```
-
-`build` はファームウェアを生成し、`size` は容量を表示します。この段階ではボードに書き込みません。初回は関連部品をダウンロードするため、次回以降より時間がかかります。
-
-`sdkconfig.defaults` は ESP32-S3、Flash、PSRAM などの初期設定を提供します。既存の `sdkconfig` を上書きしないため、古い設定を使う場合もボードの仕様を確認してください。
-
-Linux x86_64 のパッチ準備、ビルド、容量確認は検証済みです。Windows 11/EIM、各ディストリビューションのパッケージ導入、WSL2 USB は公式説明と照合していますが、各環境と実機での確認が必要です。
+ソースガイドに環境構築の全コマンドを残しています。`ip4.c` パッチと固定依存関係があるため、任意の新しい ESP-IDF へ置き換えることはできません。
 
 ## 書き込みと初回の接続
 
 ### 1. ボードにファームウェアを書き込む
 
-Windows 11 では「デバイス マネージャー → ポート（COM と LPT）」で接続前後を比較し、追加された COM ポートを探します。USB ブリッジに応じたメーカーのドライバーも必要になる場合があります。Linux は接続前後の一覧と権限を確認します。
+[ビルド済みファームウェア](docs/flash-prebuilt.ja.md)または[ソースビルド](docs/build-and-flash.ja.md)のガイドに従います。ポート、Linux の権限、WSL2 の USB 接続も説明しています。**`factory.bin` は Flash 全体を消去しなくても NVS 設定を上書きします。**互換性のあるアプリ更新や個別イメージの書き込みは通常 NVS を保持します。日常の更新で Flash 全体を消去しないでください。
 
-```bash
-ls /dev/ttyACM* /dev/ttyUSB* 2>/dev/null
-ls -l /dev/ttyACM0
-```
-
-`/dev/ttyACM0` と `COM5` は例なので、実際のポートに置き換えてください。macOS は通常 `/dev/cu.*` です。Linux のデバイスが `dialout` グループなら `sudo usermod -aG dialout "$USER"` 後にログアウト / ログインします。ほかのグループは実際の所有権に合わせ、常時 root で書き込む方法は避けます。
-
-Linux の有効化済みプロジェクトターミナル：
-
-```bash
-idf.py -p /dev/ttyACM0 flash monitor
-```
-
-Windows の有効化済み PowerShell プロジェクトターミナル：
-
-```powershell
-idf.py -p COM5 flash monitor
-```
-
-`flash` は書き込み、`monitor` は **115200 baud** のシリアルログ表示です。ESP-IDF monitor は `Ctrl+]` で終了できます。書き込み、monitor、ほかのシリアルツールで同じポートを同時に使わないでください。
-
-現在は **UART0 コンソール**設定です。ボードの UART / USB-UART 接続口を優先してください。ネイティブ USB で書き込めても、その接続口に現在の UART ログが出るとは限りません。自動でダウンロードモードに入れない場合は、ボードの BOOT/EN 操作説明に従います。
-
-**WSL2 USB：**Windows に [Microsoft の説明に従って usbipd-win](https://learn.microsoft.com/en-us/windows/wsl/connect-usb)を入れ、WSL2 ディストリビューションを起動します。次は Windows PowerShell のコマンドです。`4-4` は例で、`usbipd list` の実際の BUSID に置き換えてください。`bind` は管理者権限が必要です。
-
-```powershell
-usbipd list
-usbipd bind --busid 4-4
-usbipd attach --wsl --busid 4-4
-```
-
-その後 WSL Bash で `/dev/ttyACM*` / `/dev/ttyUSB*` を探し、Linux のコマンドで書き込みます。リセット後に再認識され、割り当てを再確認する場合があります。同じ USB を Windows と WSL のシリアルツールから同時には使えません。
-
-#### パーティション、イメージ、再書き込み
-
-`partitions.csv` は次の配置を定義します。16 MB Flash の残りは未割り当てで、OTA やファイルシステム用パーティションはありません。
-
-| 領域 | 開始アドレス | サイズ | 用途 |
-| --- | --- | --- | --- |
-| `nvs` | `0x9000` | `0x6000`（24 KiB） | 永続設定などの NVS データ |
-| `phy_init` | `0xf000` | `0x1000`（4 KiB） | PHY 初期化データの予約領域。現在は独立した PHY イメージなし |
-| `factory` | `0x10000` | 4 MiB | アプリケーション |
-
-ビルドは `build/bootloader/bootloader.bin`（アプリ起動）、`build/partition_table/partition-table.bin`（配置の説明）、`build/esp32-socks5-gateway.bin`（アプリ）を生成します。現在の `build/flash_args` は順に `0x0`、`0x8000`、`0x10000` を指定し、`idf.py flash` が使用します。手作業でアドレスを推測する必要はありません。
-
-通常の書き込みは必要なイメージ範囲を消去・書き込みする処理で、`erase-flash` とは異なります。同じ配置なら NVS 設定は通常残ります。全消去はネットワークと管理パスワードを消し、結合した完全イメージの埋め合わせ領域も NVS を上書きする場合があります。通常の更新では全消去せず、配置や互換性のない設定形式を変える前に設定を保存してください。既存 NVS は新しいコンパイル時の既定値より優先します。
-
-起動時に `ESP_ERR_NVS_NO_FREE_PAGES` または `ESP_ERR_NVS_NEW_VERSION_FOUND` が出た場合は例外です。現在のコードは NVS を消去して再試行するため、設定を失う場合があります。ハードウェア/NVS の確認前に起動が失敗すると、シリアル復旧コマンドはまだ使えません。まず起動ログを確認してください。[復旧の範囲](docs/maintenance.md#tested-boundary)も参照してください。
+コンソールは **UART0、115200 baud** です。ログとコマンドにはボードの UART / USB-UART 接続口を優先します。ネイティブ USB で書き込めても、その接続口に UART ログが出るとは限りません。書き込み前にほかのシリアルツールを終了してください。
 
 ### 2. ESP32 の Wi-Fi に接続する
 
-スマートフォンまたはパソコンから `ESP32-Transparent-Proxy` に接続し、`menuconfig` で設定した AP パスワードを使います。変更していない場合の開発用既定値は `esp32proxy` です。通常の利用前に変更してください。
+スマートフォンまたはパソコンから `ESP32-Transparent-Proxy` に接続し、ファームウェアパッケージの説明または自分のビルド設定にある AP パスワードを使います。変更していない場合の開発用既定値は `esp32proxy` です。通常の利用前に変更してください。
 
 上流をまだ設定していないと、スマートフォンが「インターネットに接続できない Wi-Fi」と表示することがあります。接続を維持して、ローカルの管理ページを開いてください。初回の確認では、モバイルデータや自動ネットワーク切り替えを一時的に無効にすると、ESP32 経由の通信か判断しやすくなります。
 
@@ -371,7 +175,7 @@ SOCKS5 は NO AUTH を使うため、SOCKS5 用のユーザー名 / パスワー
 
 ### 4. ネットワークとプロキシを設定する
 
-「Gateway configuration」（ゲートウェイ設定）に入力します。以下は英語画面の項目名です。
+「Network settings」（ネットワーク設定）を開いて入力します。以下は英語画面の項目名です。
 
 | 画面の項目 | 入力する内容 |
 | --- | --- |
@@ -406,7 +210,7 @@ AP 名 / パスワードを変えた場合は新しい値で接続し、X を変
 
 ## 日常の操作と状態 LED
 
-管理ページでは、動作状態、接続端末、端末別のプロキシ通信量、最近のイベントを確認できます。上流 Wi-Fi の再接続、現在のプロキシ接続の終了、再起動も可能です。ダウンロードや動画が中断する場合があるため、操作後の結果を確認し、連続して同じ操作を送らないでください。
+管理ページは最初に接続の概要、次の確認手順、接続端末を表示します。必要に応じてネットワーク設定、接続診断とインターネット検査、装置の詳細/資源/イベント、接続の保守を展開します。上流の基本設定をまとめ、ローカル AP、DNS、管理パスワードは設定内の折りたたみ項目に配置しています。上流 Wi-Fi の再接続、現在のプロキシ接続の終了、再起動も可能です。ダウンロードや動画が中断する場合があるため、操作後の結果を確認し、連続して同じ操作を送らないでください。
 
 | 色 | 意味 | 次に確認すること |
 | --- | --- | --- |
@@ -424,14 +228,10 @@ AP 名 / パスワードを変えた場合は新しい値で接続し、X を変
 
 近い側から **端末 → ESP32 AP → 上流 Wi-Fi → SOCKS5 → DNS / 接続先サイト** の順に調べると、原因を絞りやすくなります。まず 1 台を動かしてから 2 台目を追加してください。
 
+SDK、パッチ、ダウンロード、コンパイルの問題は[ビルド時の問題](docs/build-and-flash.ja.md#ビルド時の問題)を参照してください。
+
 | 症状 | 最初に確認する点 |
 | --- | --- |
-| `idf.py` が見つからない | 今のターミナルで ESP-IDF を有効にしてから、プロジェクトへ移動 |
-| Python / CMake / Ninja の版やパスが違う | Python ≥ 3.10、CMake ≥ 3.22、対応 SDK のターミナル。Windows と WSL のツールを混ぜない |
-| lwIP の revision / hash が一致しない | 両固定コミットとサブモジュールを確認。LF/CRLF の差だけなら対応済みです。SDK の lwIP リポジトリで `git diff` を確認するか、プロジェクト側をバックアップしてから再生成。パッチは強制しない |
-| ビルドが別 SDK や全体の lwIP を参照 | 正しい環境で `idf.py reconfigure`。古いキャッシュが残る場合はプロジェクト内で `idf.py fullclean` 後にビルド |
-| ビルド中に部品をダウンロードできない | 最初のダウンロードエラーと、GitHub・Espressif のダウンロード先・部品レジストリへの接続。TLS / ハッシュ検証は無効にしない |
-| シリアルポートがない / 書き込めない | データ対応ケーブル、ボードの USB 接続先、ドライバー、ポート権限、WSL の USB 接続、ほかのツールによる使用 |
 | 起動時に PSRAM エラーが出る | ボードが N16R8 / Octal PSRAM 設定と合うか、電源が安定しているか |
 | スマートフォンが「インターネットなし」と表示 | 初回設定では接続を維持。その後は STA とプロキシを確認し、テスト中のモバイルデータ切り替えを防ぐ |
 | 管理ページが開かない | ESP32 AP に接続しているか、`http://`、X 変更後のアドレス、DHCP の再取得 |
@@ -471,127 +271,20 @@ AP 名 / パスワードを変えた場合は新しい値で接続し、X を変
 
 Web の「Restore default configuration」（既定値に復旧）も管理パスワードを保持しますが、再起動後に 180 秒以内の確定が必要です。シリアルの `reset-network` は前述の 30 秒コードで確認します。**RST/EN と電源の入れ直しは再起動のみで、保存されたパスワードやネットワークを消しません。BOOT は復旧メニューには使いません。** 通常の復旧で Flash 全体を消去する必要はありません。
 
-Linux/WSL2 でログの保存と行単位のコマンド送信を 1 つの接続で行うには、プロジェクトのルートで実行します。
-
-```bash
-python tools/uart_capture.py --port /dev/ttyACM0 --no-reset --interactive --timestamps --seconds 0
-```
-
-`--interactive` の標準入力処理は POSIX 専用で、Enter 後に行全体を送信します。Windows のコマンド入力には `idf.py -p COM5 monitor` またはシリアルターミナルを使ってください。ログ保存だけなら `--port COM5` を指定し、`--interactive` を付けずに使えます。タイムスタンプ付きでも、改行前のプロンプトとエコーをすぐに表示します。先にほかのシリアルツールを終了してください。`--seconds 0` は中断まで読み続けます。`--no-reset` はツールによる能動的なリセットを避けますが、アダプターやドライバーによってリセット信号が影響を受ける場合はあります。
+ログ保存と POSIX の行入力は[シリアルツールガイド](tools/README.md)を参照してください。
 
 ## 開発を続けるための説明とテスト
 
-### 実装を簡単に理解する
+アプリは ESP-IDF のドライバー/サービス、FreeRTOS のタスク、lwIP TCP/IP スタックを使います。プロジェクト内の lwIP パッチが端末のパケットを取り込み、元の宛先を記録して応答のアドレスを復元します。TCP は SOCKS5 `CONNECT`、UDP は `UDP ASSOCIATE` で中継し、全体の SDK は変更しません。
 
-`main/` は ESP-IDF の Wi-Fi、`esp_netif`、socket、HTTP、NVS API を使ってゲートウェイの動作を定義します。**FreeRTOS は ESP-IDF 内蔵のスケジューラー**で、TCP/UDP や保守タスク、キュー、ロックを扱います。**lwIP は TCP/IP スタック**で、IPv4、TCP 接続交渉、再送などを担当します。アプリが転送方針を決め、SDK がドライバーとサービスを提供し、FreeRTOS が実行を調整し、lwIP が通信を処理します。別の OS をボードに導入する必要はありません。
+[実装と開発ガイド](docs/development.ja.md)にはデータ経路、モジュール/ソース一覧、回帰コマンド、ツールの概要があります。[ビルドと書き込み](docs/build-and-flash.ja.md)には指定依存関係と lwIP の `apply` / `check` / `restore` 手順があります。
 
-ESP32 を、データを受け取り、相手に渡す中継役として考えると分かりやすくなります。
+- [ドキュメント索引](docs/README.md)：現行ガイドと過去の記録。
+- [保守と復旧](docs/maintenance.md)：設定の試用と復旧の範囲。
+- [性能と検証](docs/performance.md)：過去の測定とテストの限界。
+- [ツールガイド](tools/README.md)：UART 記録、調査、速度測定、パッケージ作成。
 
-- **TCP** は、多くの Web 接続などで使う、確実な転送を行う仕組みです。ゲートウェイは端末が接続したい相手を記録し、SOCKS5 `CONNECT` で代理接続を依頼して、応答を端末へ返します。
-- **UDP** は、通常の DNS 問い合わせや一部のリアルタイム通信で使います。`UDP ASSOCIATE` で中継先を取得し、宛先情報を付けて転送します。別々の通信はそれぞれの状態を保持します。
-- **DNS** は、名前を IP アドレスに変換します。既定の DHCP は端末に `1.1.1.1` を通知します。ESP32 にローカル DNS サービスはなく、通常の DNS UDP 通信も SOCKS5 経由です。
-- **NVS** は、Flash に設定を保存する領域です。そのため通常の再起動で設定が残り、アプリの再書き込みでも既存のネットワーク設定が自動では置き換わりません。
-
-全体の容量は、同時に中継する TCP 接続が 64、UDP flow が 32 です。宛先と終了処理を記録する 512 件の対応表には、前述の端末ごとの上限もあります。**TCP を 512 接続同時に転送できる意味ではありません**。再送など TCP の基本動作は lwIP が担当し、アプリの固定ループで複数の接続を処理します。
-
-### Web ページへの TCP 接続を追う
-
-**なぜ `ip4.c` を変更する？** 端末の Web 要求は外部ホスト宛てなので、通常のローカル socket ではその TCP 接続を受け取れません。パッチは IPv4 検証後、ローカルアドレス判定前に入力フックを入れ、宛先の記録と変更を可能にします。出力側はヘッダー準備後、ネットワークインターフェースへ渡す前に元のアドレスへ戻します。変更には独立したパケットコピーを使い、lwIP の再送用データを壊しません。SOCKS5 socket を開くだけではこの透過取り込み・アドレス復元はできず、アプリが TCP 全体を実装し直す必要もありません。[ESP-IDF の lwIP 説明](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/api-guides/lwip.html)も参照してください。
-
-スマートフォンが Web サイトの `203.0.113.10:443` に接続するとします。このアドレスは説明用の例です。
-
-1. スマートフォンは、デフォルトゲートウェイである ESP32 にパケットを送ります。
-2. プロジェクト内の lwIP パッチが IPv4 の処理経路からゲートウェイのコードを呼びます。パケットを検証し、端末と元の宛先を記録して、ESP32 のローカル待ち受けポートへ向け直します。受信側が検証できるようチェックサムも更新します。
-3. lwIP がローカル TCP 接続を処理し、アプリは socket からデータを読みます。socket はプログラムがネットワークデータを送受信するためのインターフェースで、アプリ自身が TCP の接続交渉や再送を実装する必要はありません。
-4. TCP の転送ループが上流と SOCKS5 NO AUTH を交渉し、`CONNECT` で元の宛先への接続を依頼します。その後、2 つの接続間でデータを中継します。
-5. スマートフォンへ返す TCP パケットは、対応表から元の接続先アドレスへ戻し、チェックサムを修正します。端末からは Web サイトとの接続に見えます。
-
-```mermaid
-flowchart LR
-    Client["端末の TCP パケット"] --> Hook["IPv4 フック<br/>宛先を記録してアドレスを変更"]
-    Hook --> Stack["lwIP のローカル接続"]
-    Stack --> Relay["TCP 転送ループ"]
-    Relay -->|SOCKS5 CONNECT| Proxy["上流プロキシ"]
-    Proxy --> Site["元の Web サイト"]
-```
-
-「透過」は端末からの使い方を示します。元の TCP パケットをそのまま SOCKS5 に入れるのではなく、lwIP が接続を処理してから、その中のデータを中継します。HTTPS の暗号化はブラウザーと Web サイトが担当し、ゲートウェイはページ内容を復号しません。
-
-### UDP、並行処理、設定保存の仕組み
-
-UDP 自体には TCP のような接続手順がありませんが、SOCKS5 の UDP 転送には TCP の制御接続が必要です。各 UDP flow は端末と宛先を記録し、`UDP ASSOCIATE` を交渉して、SOCKS5 の宛先ヘッダー付き UDP データを中継先へ送ります。返信は flow と端末の所属を確認してから配信します。DNS 用に一部の容量と交渉機会を確保し、ほかの UDP 通信が資源を使い切って名前解決ができなくなる状況を減らしています。
-
-TCP と UDP はそれぞれ固定の転送ループを使います。今送受信できる接続を確認し、一部のデータを処理して次の接続に移ります。接続ごとにタスクは作りません。キュー容量と待ち時間には上限があり、大きな TCP データバッファーは PSRAM、頻繁に参照する TCP 状態は内部 RAM に置きます。メモリ使用量を制御する仕組みで、無線帯域や接続総数の上限がなくなるわけではありません。
-
-設定管理は現在の値と以前の値を保存します。新しいネットワークは試用後に確定し、時間切れなら元へ戻します。管理 / 保守タスクは転送ループと分かれており、状態ページを開くたびにプロキシを再起動しません。各端末の接続識別情報と通信量カウンターを使い、返信の所属や、切断した端末の接続を判別します。
-
-端末は ESP32 の DHCP から IPv4 アドレスを取得する必要があります。手動の固定 IP は転送用の端末一覧に登録されません。接続識別子は再接続後の古い返信を区別しますが、IP 偽装を防ぐ認証ではありません。通信量は中継した TCP/UDP の **ペイロードのバイト数**を数え、プロトコルヘッダーを含みません。無線全体のバイト数や、アプリが受信済みという証明ではありません。
-
-管理サーバーはリクエストごとのネットワーク受信/送信を **5 秒**の期限で制限し、本文は 1024 バイトまでです。拒否したリクエストや未読の本文がある場合は接続を閉じ、任意の長さのデータを読み捨てません。同じ HTTP タスクで処理する設定のロールバックに対するネットワーク待機の影響を抑えます。状態の更新で未保存の Internet チェック設定を上書きせず、イベント名はページの言語に合わせて表示します。
-
-ソースを読む場合は、調べたい部分に対応するファイルから始められます。
-
-| 知りたい部分 | 主なソース |
-| --- | --- |
-| 起動、AP/STA、ネットワークイベント | [app_main.c](main/app_main.c) |
-| TCP 入力、アドレス変更、宛先記録 | [tcp_poc.c](main/tcp_poc.c)、[packet_rewrite.c](main/packet_rewrite.c)、[flow_table.c](main/flow_table.c) |
-| TCP の SOCKS5 交渉と双方向転送 | [socks_relay.c](main/socks_relay.c) |
-| UDP の受け取り、関連付け、データ形式 | [udp_gateway.c](main/udp_gateway.c)、[udp_relay.c](main/udp_relay.c)、[socks_udp.c](main/socks_udp.c) |
-| 端末の所属と通信量 | [ap_clients.c](main/ap_clients.c) |
-| 設定保存、確定、復旧 | [gateway_settings.c](main/gateway_settings.c)、[web_management.c](main/web_management.c) |
-| HTTP の通信期限と接続の終了処理 | [management_http.c](main/management_http.c) |
-| 保守タスク、接続検査 | [gateway_control.c](main/gateway_control.c)、[gateway_probe.c](main/gateway_probe.c) |
-
-全体の経路と担当は [アーキテクチャ](docs/architecture.md)を参照してください。初回は設定手順を理解し、必要になった部分から実装を読めば十分です。
-
-### 既存の回帰テストを実行する
-
-「ホストテスト」は開発用パソコンで C コードの一部をコンパイルし、実行するテストです。ESP32 ボードは不要です。先にファームウェアを 1 回正常にビルドし、指定した cJSON が `managed_components/` に取得されていることを確認してください。
-
-Linux で ESP-IDF を有効にしたプロジェクトのターミナルを使い、システム GCC/binutils と Node.js を用意して実行します。
-
-```bash
-# PATH を変える前に、使用中の Python の場所を保存します。
-HOST_PYTHON="$(command -v python)"
-PATH=/usr/bin:/bin:$PATH "$HOST_PYTHON" -m unittest discover -s tests -v
-node tests/management_feedback_harness.js
-node tests/management_transport_harness.js
-```
-
-ESP-IDF の Python 環境には、UART テストで使う pyserial/esptool が含まれます。現在は **87 項目のファームウェア/ツールのホスト回帰と 19 項目の lwIP 準備スクリプト回帰**、および 2 組のフロントエンドの操作結果 / 互換性テストがあります。準備スクリプトのテストは一時 Git リポジトリで LF/CRLF、繰り返し操作、読み取り専用検証、想定外の編集の拒否を確認します。HTTP の期限は実際のホスト socket、シリアルのエコー/プロンプトは疑似端末と模擬 UART ドライバーで検証します。実行数、失敗、スキップを確認してください。成功しても、実際の Wi-Fi、電源断、長時間のボード動作を検証したことにはなりません。
-
-### tools の簡単な使い分け
-
-プロジェクトのルートで実行します。ビルドに必須なのは lwIP の準備だけで、ほかは任意の調査/開発ツールです。完全なコマンド、プラットフォームの制限、テスト条件は [ツールの使用ガイド（英語）](tools/README.md)を参照してください。
-
-| ツール | 用途 |
-| --- | --- |
-| `prepare_lwip.py` | `apply` でコピー準備、`check` で検証、`restore` でローカルパッチを復元 |
-| `uart_capture.py` | シリアルログ保存。Linux/WSL2 は `--interactive` でコマンド送信も可能 |
-| `probe_upstream_udp.py`、`probe_upstream_quic.py` | パソコンから SOCKS UDP/DNS または QUIC を直接検査。ESP32 は通りません |
-| `test_stream_server.py`、`throughput_bench.html` | LAN のテストサービス/ページを起動し、AP 端末から速度測定 |
-| `test_transparent_echo.py`、`test-transparent-echo.ps1` | 専用の echo 宛先で透過 TCP を検査。通常の HTTPS サイトは echo サービスではありません |
-| `collect_link_bench.py`、`snapshot_manifest.py` | 対応する診断 UART レポートの抽出、ローカルファイル一覧の作成/検証 |
-
-### ディレクトリと参考資料
-
-| パス | 内容 |
-| --- | --- |
-| `main/` | ファームウェアと組み込み管理ページ |
-| `patches/` | lwIP パッチとリビジョン / ハッシュ情報 |
-| `tools/` | パッチ準備、UART 記録、ネットワーク調査、速度測定 |
-| `tests/` | C/Python ホストテストと JavaScript フロントエンドテスト |
-| `examples/` | Xray の完全なクライアント設定例、配置ガイド、部分設定 |
-| `sdkconfig.defaults` | ハードウェア / 機能の初期設定 |
-| `dependencies.lock` | ファームウェア部品のバージョン記録 |
-| `docs/` | 設計、保守、性能、開発記録 |
-
-- [ドキュメント索引](docs/README.md)
-- [保守と復旧](docs/maintenance.md)
-- [性能と検証](docs/performance.md)：測定記録、メモリのサンプル値、検証の範囲。
-- [開発履歴](docs/history/README.md)：後で取り消した実験も含まれます。日常の動作は、この README と `docs/` 直下の説明を優先してください。
-
-`sdkconfig`、`build/`、`managed_components/`、プロジェクト内の lwIP コピー、テスト出力はツールが生成します。コミット前に `git status` を確認し、Wi-Fi パスワード、個人設定、ログ、ローカルのファームウェア成果物を公開しないでください。
+生成ファイル、ログ、個人設定、ファームウェアには機密情報が含まれる場合があります。共有前に `git status` と内容を確認してください。
 
 ## 対応範囲とセキュリティ
 
@@ -600,3 +293,7 @@ IPv4、SOCKS5 NO AUTH、TCP と UDP の転送に対応します。IPv6、HTTP �
 2 台の端末は 1 つの 2.4 GHz 無線と転送容量を共有します。接続台数の制限は、帯域の均等配分を保証しません。多数の利用者、高い速度、完全なルーター機能が必要な装置の代替には向きません。PSRAM があっても Wi-Fi/lwIP は限られた内部 RAM に依存します。長期安定性、Flash 書き込み中の電源断、実際の上流障害は追加の検証が必要です。
 
 管理ページは AP 側だけで公開しますが、HTTP を使います。管理パスワードとネットワーク設定は NVS に暗号化せず保存します。シリアル復旧は物理アクセスを前提とし、ログイン認証はありません。セキュアブートと Flash 暗号化も有効にしていません。信頼できる端末とネットワークで初期設定し、自分のパスワードを使い、管理ページや認証なしのプロキシをインターネットに公開しないでください。
+
+## ライセンスと上流の表示
+
+本プロジェクトの独自コードは [MIT ライセンス](LICENSE)です。第三者のコードと改編した例は、それぞれのライセンスと著作権表示を保持します。[第三者の表示](THIRD_PARTY_NOTICES.md)を参照してください。ファームウェアパッケージには適用される許諾文を含めます。MIT は上流のライセンスを置き換えません。

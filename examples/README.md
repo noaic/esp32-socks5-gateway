@@ -120,6 +120,8 @@ Linux Bash：
 
 ## 官方参考
 
+许可说明：完整示例 `xray-client-reality.json` 改编了官方客户端传输结构，按 **CC BY-SA 4.0** 提供；作者、来源、修改内容和适用范围见 [LICENSE.md](LICENSE.md)。其他原创片段及说明适用项目 MIT 许可证。该示例的许可证不改变 ESP32 固件的许可证。
+
 - [官方 VLESS + TCP + XTLS Vision + REALITY 客户端示例](https://github.com/XTLS/Xray-examples/tree/main/VLESS-TCP-XTLS-Vision-REALITY)：本例参考其客户端传输结构，再加入本项目的 LAN SOCKS5、DNS 与路由。
 - [SOCKS 入站](https://xtls.github.io/en/config/inbounds/socks.html)、[内置 DNS](https://xtls.github.io/en/config/dns.html)、[DNS 出站](https://xtls.github.io/en/config/outbounds/dns.html)。
 - [路由规则](https://xtls.github.io/en/config/routing.html)、[入站及 sniffing](https://xtls.github.io/en/config/inbound.html)、[VLESS 出站与 UDP 443](https://xtls.github.io/en/config/outbounds/vless.html)。

@@ -2,30 +2,17 @@
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title data-i18n="title">ESP32 Gateway Management</title>
 <style>
-body{font:16px system-ui,sans-serif;margin:auto;padding:18px;max-width:850px;background:#f3f5f8;color:#182335}section{background:white;padding:18px;margin:16px 0;border-radius:12px}h1{font-size:24px}h2{font-size:19px}label{display:block;margin:12px 0}input,select,button{font:inherit;padding:9px;border:1px solid #b6c1d0;border-radius:6px;box-sizing:border-box}input:not([type=checkbox]),select{display:block;width:100%;margin-top:5px}button{background:#245ac7;color:white;margin:5px 8px 5px 0;cursor:pointer}button:disabled{opacity:.5}p,small{line-height:1.6}pre{white-space:pre-wrap;font:14px system-ui;line-height:1.8}#operation{background:#e7eefc;padding:12px;border-radius:8px;white-space:pre-wrap}#message{position:sticky;top:0;background:#e7eefc;padding:12px;border-radius:8px;white-space:pre-wrap}.client{padding:12px 0;border-top:1px solid #ddd}.warn{color:#994100}details{margin-top:12px}fieldset{border:1px solid #d8dfe8;border-radius:8px;margin:18px 0;padding:12px}legend{font-weight:600;padding:0 6px}
+body{font:16px system-ui,sans-serif;margin:auto;padding:18px;max-width:850px;background:#f3f5f8;color:#182335}section{background:white;padding:18px;margin:16px 0;border-radius:12px}h1{font-size:24px}h2{font-size:19px}h3{font-size:17px}summary{font-weight:600;cursor:pointer;padding:4px 0}summary:focus-visible,a:focus-visible,button:focus-visible{outline:3px solid #88aaf0;outline-offset:3px}#overview{font-weight:500}#nextStep{background:#eef3fb;border-left:4px solid #245ac7;padding:12px;margin:14px 0}#nextTitle{margin:0 0 6px}#nextHelp{margin:0}#capacityNote{font-size:14px}details>summary{line-height:1.6}label{display:block;margin:12px 0}input,select,button{font:inherit;padding:9px;border:1px solid #b6c1d0;border-radius:6px;box-sizing:border-box}input:not([type=checkbox]),select{display:block;width:100%;margin-top:5px}button{background:#245ac7;color:white;margin:5px 8px 5px 0;cursor:pointer}button:disabled{opacity:.5}p,small{line-height:1.6}pre{white-space:pre-wrap;font:14px system-ui;line-height:1.8}#operation{background:#e7eefc;padding:12px;border-radius:8px;white-space:pre-wrap}#message{background:#e7eefc;padding:12px;border-radius:8px;white-space:pre-wrap}.client{padding:12px 0;border-top:1px solid #ddd}.warn{color:#994100}details{margin-top:12px}fieldset{border:1px solid #d8dfe8;border-radius:8px;margin:18px 0;padding:12px}legend{font-weight:600;padding:0 6px}
 </style>
 <h1 data-i18n="title">ESP32 Gateway Management</h1><p data-i18n="summary">IPv4 · AP+STA · SOCKS5 · Up to two clients</p>
 <div id="message" role="status" data-i18n="loading_status">Reading status…</div>
 <p id="operation" role="status" hidden></p><p id="recoveryLink" hidden><a id="managementLink" data-i18n="open_management">Open management page</a> <span data-i18n="stay_ap">· Stay connected to this device’s AP.</span></p>
 <section id="trial" hidden><h2 data-i18n="pending_config">New configuration awaits confirmation</h2><p id="trialText"></p><p data-i18n="trial_help">First check that both devices can access the Internet. Confirm to keep the new settings; otherwise the previous settings are restored automatically. If you changed the management password, log in with the new password.</p><button id="confirm" data-i18n="confirm_keep">Confirm and keep configuration</button></section>
-<section><h2 data-i18n="runtime_heading">Runtime status</h2><pre id="status" data-i18n="loading">Loading…</pre><button id="refresh" data-i18n="refresh">Refresh status</button><small data-i18n="poll_help">Refreshes every 10 seconds while visible; pauses in the background.</small><details><summary data-i18n="metrics_heading">Diagnostic metrics</summary><pre id="metrics"></pre><p data-i18n="metrics_help">Total memory means the allocatable heap registered by the system, not all physical RAM. Used memory is total minus free, including allocator overhead. Stack figures show peak use, not current use. Minimum free memory and error counts cover the current boot. Check upstream availability with actual webpages; manual/automatic Internet checks are configured below.</p></details></section>
-<section><h2 data-i18n="maintenance_heading">Connection status and maintenance</h2><pre id="health" data-i18n="loading">Loading…</pre>
-<p data-i18n="health_help">Purple means AP+STA are ready. Green means a DNS+HTTP check through SOCKS5 succeeded within the last 10 minutes. It covers only the check target, not every website or QUIC connection.</p>
-<label><input id="ledEnabled" type="checkbox"> <span data-i18n="led_label">Enable the GPIO48 RGB status LED (low brightness; saves immediately without restarting)</span></label><small id="ledStatus"></small>
-<p data-i18n="led_help">Blue: upstream not configured. Red: STA not ready. Purple: network ready, checking, or result unknown/expired. Green: recent check succeeded. Yellow: subnet conflict or two consecutive failures at the current check target.</p>
-<button data-action="reconnect" data-i18n="reconnect">Reconnect upstream Wi-Fi</button><button data-action="relay_reset" data-i18n="relay_reset">Rebuild proxy connections</button><button data-action="reboot" data-i18n="reboot">Restart device</button>
-<p data-i18n="maintenance_help">Reconnecting upstream interrupts proxy traffic but keeps the local AP. Rebuilding closes existing TCP/UDP proxy connections. Restarting closes all connections and retains configuration and password.</p>
-<button data-action="diagnose" data-i18n="run_diagnostics">Run connection diagnostics</button><pre id="job"></pre>
-<p data-i18n="diagnostic_help">Diagnostics check only the configured upstream port, the NO AUTH handshake and an IPv4 DNS reply for example.com through SOCKS5 UDP. They do not probe a VPS directly or run periodically; success does not mean every website is reachable.</p>
-<fieldset><legend data-i18n="internet">Internet check</legend><pre id="internetStatus"></pre>
-<label><input id="internetAuto" type="checkbox"> <span data-i18n="auto_check_label">Enable occasional automatic checks (takes effect after saving; no restart needed)</span></label>
-<label><span data-i18n="check_target">Check target</span><select id="internetTarget"><option value="0" data-i18n="target_microsoft">Microsoft: HTTP 200 + short text</option><option value="1" data-i18n="target_android">Android: HTTP 204</option></select></label>
-<button id="saveInternet" data-i18n="save_check">Save check settings</button><button data-action="internet" data-i18n="check_now">Check Internet now</button><pre id="internetSteps"></pre>
-<p data-i18n="internet_help">All requests use the configured SOCKS5 service, with no direct fallback. Checks normally run every 5 minutes; failures back off for 30/60/120/240/300 seconds. Automatic checks require a ready upstream and confirmed network settings, and wait while maintenance is busy. Manual checks remain available when automatic checks are disabled. Green results expire after 10 minutes. Failures do not automatically restart the device or rebuild the proxy.</p></fieldset>
-<details><summary data-i18n="events_heading">Recent events</summary><pre id="events" data-i18n="loading">Loading…</pre><small data-i18n="events_help">RAM keeps the last 64 events; this page shows the newest 32. Restarting clears them. Consecutive identical events within 10 seconds are merged. Times are since boot; visited URLs are not recorded. Error codes: negative values are errno, 1000+REP means SOCKS5 rejection, and 2000+METHOD means an unsupported authentication method.</small></details>
-</section>
+<section aria-labelledby="overviewHeading"><h2 id="overviewHeading" data-i18n="overview_heading">Connection overview</h2><pre id="overview" data-i18n="loading">Loading…</pre>
+<div id="nextStep"><h3 id="nextTitle" data-i18n="loading">Loading…</h3><p id="nextHelp"></p><button id="guideAction" hidden></button></div>
+<p id="capacityNote" hidden></p><button id="refresh" data-i18n="refresh">Refresh status</button><small data-i18n="poll_help">Refreshes every 10 seconds while visible; pauses in the background.</small></section>
 <section><h2 data-i18n="clients_heading">Connected devices</h2><div id="clients"></div><small data-i18n="clients_help">Disconnect ends the current connection; it does not blacklist the device, which may reconnect automatically. Traffic figures count proxy data for this connection, excluding the management page and Wi-Fi overhead.</small></section>
-<section><h2 data-i18n="config_heading">Gateway configuration</h2><p data-i18n="config_help">Saving restarts the device after about 2 seconds and closes current connections. Rejoin the AP and reopen this page. Confirm within 180 seconds, or the previous configuration is restored.</p>
+<section><details id="configDetails"><summary data-i18n="config_heading">Network settings</summary><p data-i18n="config_help">Saving restarts the device after about 2 seconds and closes current connections. Rejoin the AP and reopen this page. Confirm within 180 seconds, or the previous configuration is restored.</p>
 <form id="settings">
 <fieldset><legend data-i18n="upstream_heading">Upstream network and proxy</legend>
 <label><span data-i18n="sta_ssid">Upstream Wi-Fi SSID</span><input name="sta_ssid" maxlength="32" autocomplete="off"></label>
@@ -34,6 +21,7 @@ body{font:16px system-ui,sans-serif;margin:auto;padding:18px;max-width:850px;bac
 <label>SOCKS5 IPv4<input name="socks_ipv4" maxlength="15" required inputmode="decimal"></label>
 <label><span data-i18n="socks_port">SOCKS5 port</span><input name="socks_port" type="number" min="1" max="65535" required></label>
 </fieldset>
+<details id="advancedSettings"><summary data-i18n="advanced_settings">Local AP, DNS and management password</summary>
 <fieldset><legend data-i18n="ap_heading">Local AP and client network</legend>
 <label><span data-i18n="ap_ssid">AP name</span><input name="ap_ssid" maxlength="32" required></label>
 <label><span data-i18n="ap_password">AP password</span><input name="ap_password" type="password" minlength="8" maxlength="63" placeholder="Leave blank to keep the current password" data-i18n-placeholder="keep_password" autocomplete="new-password"></label>
@@ -45,9 +33,30 @@ body{font:16px system-ui,sans-serif;margin:auto;padding:18px;max-width:850px;bac
 <fieldset><legend data-i18n="security_heading">Management security</legend>
 <label><span data-i18n="new_admin_password">New management password</span><input name="admin_password" type="password" minlength="12" maxlength="64" placeholder="Leave blank to keep the current password; at least 12 bytes" data-i18n-placeholder="admin_password_hint" autocomplete="new-password"></label>
 </fieldset>
+</details>
 <p class="warn" data-i18n="config_note">SSID and password lengths are measured in UTF-8 bytes. An empty upstream SSID starts only the AP. SOCKS5 supports IPv4 and NO AUTH only. DNS is forwarded through SOCKS5 UDP; this is not a local DNS service.</p>
 <button type="submit" data-i18n="save_restart">Save and restart</button></form>
-<details><summary data-i18n="defaults">Restore default configuration</summary><p data-i18n="defaults_help">Restore the build-time Wi-Fi, default SOCKS5, DNS and two-client settings. Keep the current management password. Confirmation is required after restarting.</p><button id="defaults" data-i18n="defaults_restart">Restore defaults and restart</button></details></section>
+<details><summary data-i18n="defaults">Restore default configuration</summary><p data-i18n="defaults_help">Restore the build-time Wi-Fi, default SOCKS5, DNS and two-client settings. Keep the current management password. Confirmation is required after restarting.</p><button id="defaults" data-i18n="defaults_restart">Restore defaults and restart</button></details></details></section>
+<section><details id="diagnosticsDetails"><summary data-i18n="diagnostics_heading">Connection diagnostics and Internet check</summary><p data-i18n="diagnostics_intro">Use diagnostics to locate a failing stage. Tests send traffic through the configured proxy; they do not change or restart the network.</p>
+<button data-action="diagnose" data-i18n="run_diagnostics">Run connection diagnostics</button><pre id="job"></pre>
+<p data-i18n="diagnostic_help">Diagnostics check only the configured upstream port, the NO AUTH handshake and an IPv4 DNS reply for example.com through SOCKS5 UDP. They do not probe a VPS directly or run periodically; success does not mean every website is reachable.</p>
+<fieldset><legend data-i18n="internet">Internet check</legend><pre id="internetStatus"></pre>
+<label><input id="internetAuto" type="checkbox"> <span data-i18n="auto_check_label">Enable occasional automatic checks (takes effect after saving; no restart needed)</span></label>
+<label><span data-i18n="check_target">Check target</span><select id="internetTarget"><option value="0" data-i18n="target_microsoft">Microsoft: HTTP 200 + short text</option><option value="1" data-i18n="target_android">Android: HTTP 204</option></select></label>
+<button id="saveInternet" data-i18n="save_check">Save check settings</button><button data-action="internet" data-i18n="check_now">Check Internet now</button><pre id="internetSteps"></pre>
+<p data-i18n="internet_help">All requests use the configured SOCKS5 service, with no direct fallback. Checks normally run every 5 minutes; failures back off for 30/60/120/240/300 seconds. Automatic checks require a ready upstream and confirmed network settings, and wait while maintenance is busy. Manual checks remain available when automatic checks are disabled. Green results expire after 10 minutes. Failures do not automatically restart the device or rebuild the proxy.</p></fieldset>
+</details></section>
+<section><details id="statusDetails"><summary data-i18n="status_details">Device details, resources and events</summary>
+<h3 data-i18n="runtime_heading">Runtime status</h3><pre id="status" data-i18n="loading">Loading…</pre><details><summary data-i18n="metrics_heading">Diagnostic metrics</summary><pre id="metrics"></pre><p data-i18n="metrics_help">Total memory means the allocatable heap registered by the system, not all physical RAM. Used memory is total minus free, including allocator overhead. Stack figures show peak use, not current use. Minimum free memory and error counts cover the current boot. Check upstream availability with actual webpages; manual/automatic Internet checks are configured below.</p></details><h3 data-i18n="health_details">Connection history and status LED</h3><pre id="health" data-i18n="loading">Loading…</pre>
+<p data-i18n="health_help">Purple means AP+STA are ready. Green means a DNS+HTTP check through SOCKS5 succeeded within the last 10 minutes. It covers only the check target, not every website or QUIC connection.</p>
+<label><input id="ledEnabled" type="checkbox"> <span data-i18n="led_label">Enable the GPIO48 RGB status LED (low brightness; saves immediately without restarting)</span></label><small id="ledStatus"></small>
+<p data-i18n="led_help">Blue: upstream not configured. Red: STA not ready. Purple: network ready, checking, or result unknown/expired. Green: recent check succeeded. Yellow: subnet conflict or two consecutive failures at the current check target.</p>
+<details><summary data-i18n="events_heading">Recent events</summary><pre id="events" data-i18n="loading">Loading…</pre><small data-i18n="events_help">RAM keeps the last 64 events; this page shows the newest 32. Restarting clears them. Consecutive identical events within 10 seconds are merged. Times are since boot; visited URLs are not recorded. Error codes: negative values are errno, 1000+REP means SOCKS5 rejection, and 2000+METHOD means an unsupported authentication method.</small></details>
+</details></section>
+<section><details id="maintenanceDetails"><summary data-i18n="maintenance_heading">Connection maintenance</summary>
+<button data-action="reconnect" data-i18n="reconnect">Reconnect upstream Wi-Fi</button><button data-action="relay_reset" data-i18n="relay_reset">Rebuild proxy connections</button><button data-action="reboot" data-i18n="reboot">Restart device</button>
+<p data-i18n="maintenance_help">Reconnecting upstream interrupts proxy traffic but keeps the local AP. Rebuilding closes existing TCP/UDP proxy connections. Restarting closes all connections and retains configuration and password.</p>
+</details></section>
 <p data-i18n="security_help">Management is available only on the AP. Log in as admin with the password you set on first access. RST/EN restarts without clearing it. Use a trusted personal device; HTTP does not provide transport encryption beyond Wi-Fi.</p>
 <script>
 'use strict';
@@ -59,6 +68,47 @@ function preferredLanguage(){
 }
 const pageLanguage=/^zh(?:-|$)/i.test(preferredLanguage())?'zh-CN':'en';
 const text={
+ "guide_diagnose": ["Run connection diagnostics","运行连接诊断"],
+ "guide_internet": ["Check Internet now","立即检查互联网"],
+ "guide_details": ["Open device details","打开设备详情"],
+ "guide_diagnostics": ["Open diagnostic results","打开诊断结果"],
+ "overview_text": ["AP: {0} · devices {1} / {2}\nUpstream Wi-Fi: {3} · {4}\nInternet check: {5}", "AP：{0} · 设备 {1} / {2}\n上游 Wi-Fi：{3} · {4}\n互联网检查：{5}"],
+ "guide_settings": ["Open network settings", "打开网络设置"],
+ "guide_advanced": ["Open AP and DNS settings", "打开 AP 与 DNS 设置"],
+ "guide_read_config": ["Read configuration again", "重新读取配置"],
+ "guide_unread_title": ["Configuration could not be read", "尚未读取到配置"],
+ "guide_unread_help": ["Keep this page connected to the gateway AP and retry reading the settings. A failed read does not mean that the upstream is unconfigured.", "请保持连接网关 AP，重试读取设置。读取失败不表示尚未配置上游。"],
+ "guide_setup_title": ["Set up the upstream connection", "先配置上游连接"],
+ "guide_setup_help": ["Enter your 2.4 GHz Wi-Fi and the LAN IPv4 address and port of a SOCKS5 service. Saving restarts the device; reconnect and confirm within 180 seconds.", "填写 2.4 GHz Wi-Fi，以及局域网 SOCKS5 服务的 IPv4 地址和端口。保存后会重启，请重连并在 180 秒内确认。"],
+ "guide_wifi_title": ["Waiting for upstream Wi-Fi and IPv4", "等待上游 Wi-Fi 和 IPv4"],
+ "guide_wifi_help": ["Check the 2.4 GHz SSID, password, signal and the upstream router’s DHCP service. Reconnection is automatic. Update settings if needed; a historical disconnect code is shown in device details.", "请检查 2.4 GHz SSID、密码、信号，以及上游路由器的 DHCP 服务。设备会自动重连；需要时修改设置。历史断开代码可在设备详情中查看。"],
+ "guide_subnet_title": ["The AP and upstream subnets overlap", "本地 AP 与上游网段冲突"],
+ "guide_subnet_help": ["Choose an unused AP subnet third octet under local AP settings. Saving changes the management address and restarts the device. Rejoin, open the new address and confirm; otherwise the old settings return.", "在本地 AP 设置中选择不与上游重叠的网段第三段数字。保存后管理地址会改变并重启；请重连、打开新地址并确认，否则会恢复旧配置。"],
+ "guide_wait_title": ["Forwarding is not ready yet", "转发条件尚未就绪"],
+ "guide_wait_help": ["Wait a few seconds and refresh. If this persists, inspect connection history and recent events. An acquired Wi-Fi address alone does not prove that the proxy works.", "请稍候数秒再刷新；持续异常时查看连接历史和最近事件。获得 Wi-Fi 地址本身不表示代理可用。"],
+ "guide_busy_title": ["A connection or maintenance task is running", "连接或维护任务执行中"],
+ "guide_busy_help": ["Wait for the result below before starting another operation. Checks do not automatically restart the device or rebuild proxy connections.", "请等待下方结果，再发起其他操作。检查不会自动重启设备或重建代理连接。"],
+ "guide_port_title": ["Last check stopped at the proxy TCP port", "最近检查停在代理 TCP 端口"],
+ "guide_port_help": ["Check the configured SOCKS5 IPv4 and port. The service must listen on a LAN interface and allow the ESP32 STA address through its host firewall. Test again after changing the network.", "检查 SOCKS5 IPv4 和端口。服务应监听局域网接口，主机防火墙需允许 ESP32 的 STA 地址访问。网络变动后请重新检查。"],
+ "guide_auth_title": ["Last check stopped at the SOCKS5 handshake", "最近检查停在 SOCKS5 握手"],
+ "guide_auth_help": ["This firmware requires SOCKS5 NO AUTH (no username/password). Confirm that the port is a SOCKS5 inbound, not HTTP or a remote VLESS/REALITY endpoint, and permits NO AUTH.", "固件要求 SOCKS5 NO AUTH（无用户名密码）。请确认此端口是 SOCKS5 入站，允许 NO AUTH，而不是 HTTP 或远端 VLESS/REALITY 节点端口。"],
+ "guide_udp_title": ["Last check stopped at UDP / DNS", "最近检查停在 UDP / DNS"],
+ "guide_udp_help": ["The port and NO AUTH steps passed in this check. Enable SOCKS5 UDP ASSOCIATE and allow its advertised IPv4 UDP relay port through the host firewall. Check the configured DNS IPv4 and upstream DNS routing. A TCP-only proxy is insufficient.", "本次检查的端口与 NO AUTH 阶段已通过。请启用 SOCKS5 UDP ASSOCIATE，放行其返回的 IPv4 UDP 中继端口，并检查 DNS IPv4 和上游 DNS 路由。只有 TCP 代理还不够。"],
+ "guide_dns_title": ["The DNS server returned an error", "DNS 服务器返回错误"],
+ "guide_dns_help": ["A DNS reply arrived through the UDP relay, but it reported a DNS error. Check the selected DNS server and upstream DNS policy, then retry. The detailed result includes the DNS response code.", "UDP 中继已收到 DNS 回包，但服务器报告 DNS 错误。请检查所选 DNS 服务器和上游 DNS 策略后重试；详细结果中保留 DNS 响应代码。"],
+ "guide_target_title": ["The Internet check target did not pass", "互联网检测目标未通过"],
+ "guide_target_help": ["The port, NO AUTH and DNS steps passed in this check. Check upstream CONNECT / HTTP routing, try a real website, or select the other check target and save. This result does not establish that all Internet access is down.", "本次检查的端口、NO AUTH 和 DNS 阶段已通过。请检查上游 CONNECT / HTTP 路由，尝试实际网站，或选择另一检测目标并保存。该结果不表示整个互联网都不可用。"],
+ "guide_probe_pass_title": ["The last connection diagnostic passed", "最近连接诊断已通过"],
+ "guide_probe_pass_help": ["The proxy port, NO AUTH and a DNS round trip passed. Run the Internet check or try an actual website next; this diagnostic does not test HTTP, HTTPS or QUIC.", "代理端口、NO AUTH 和 DNS 往返已通过。下一步可运行互联网检查或访问实际网站；该诊断不测试 HTTP、HTTPS 或 QUIC。"],
+ "guide_check_title": ["Wi-Fi is ready; verify the proxy path", "Wi-Fi 已就绪，请验证代理链路"],
+ "guide_check_help": ["Run an Internet check through SOCKS5. If it fails, the stage results below help separate the proxy port, authentication, UDP DNS and check target. Also try the applications you intend to use.", "可运行经 SOCKS5 的互联网检查。失败时，下方分阶段结果可区分代理端口、认证、UDP DNS 和检测目标；也请尝试实际要使用的应用。"],
+ "guide_pass_title": ["The recent Internet check passed", "最近互联网检查已通过"],
+ "guide_pass_help": ["DNS and HTTP through SOCKS5 worked for the selected target. Try your own applications too; this does not verify every website, HTTPS or QUIC. Details remain available below.", "所选目标经 SOCKS5 的 DNS 与 HTTP 检查成功。也请测试实际应用；该结果未验证所有网站、HTTPS 或 QUIC。详细信息可在下方展开。"],
+ "guide_trial_title": ["Test the new settings before confirming", "确认前请测试新配置"],
+ "guide_trial_help": ["Try Internet access on your connected devices, then use the confirmation button above before the countdown ends. The previous configuration returns if you do not confirm.", "请先在接入设备上测试联网，再在倒计时结束前点击上方确认按钮；未确认将恢复上一份配置。"],
+ "guide_dhcp_title": ["A client is waiting for a DHCP address", "有设备正在等待 DHCP 地址"],
+ "guide_dhcp_help": ["Set the client’s Wi-Fi IPv4 configuration to automatic (DHCP), then reconnect if needed. A manually assigned static client address is not supported for transparent forwarding.", "请将客户端 Wi-Fi 的 IPv4 配置设为自动获取（DHCP），需要时重新连接。透明转发不支持手工配置静态客户端地址。"],
+ "capacity_note": ["Limits: {0} connected devices, {1} active TCP and {2} UDP flows in total. If new connections fail at capacity, close unused applications and retry. Quota rejection counters below are cumulative for each client connection.", "上限：{0} 台接入设备、全局 {1} 条活动 TCP 和 {2} 条 UDP 流。若达到容量时新连接失败，可关闭不用的应用后重试。下方配额拒绝计数为各客户端本次连接累计值。"],
  "config_read_failed": ["Could not read configuration: {0}","配置读取失败：{0}"],
  "defaults_warning": ["Restore defaults and restart? The management password is retained.","恢复默认配置并重启？管理密码保持不变。"],
  "save_warning": ["Save and restart? All connections will close. Reconnect and open http://192.168.{0}.1/, then confirm within 180 seconds; otherwise the device returns to 192.168.{1}.1.","保存并强制重启？所有连接会断开。重连后打开 http://192.168.{0}.1/，在 180 秒内确认；否则恢复 192.168.{1}.1。"],
@@ -176,6 +226,12 @@ const text={
 };
 // English labels are already in the HTML; store only their Chinese counterparts.
 const chineseLabels={
+ "overview_heading": "连接概览",
+ "advanced_settings": "本地 AP、DNS 与管理密码",
+ "diagnostics_heading": "连接诊断与互联网检查",
+ "diagnostics_intro": "通过分阶段检查定位故障。测试经配置的代理发送流量，不会修改或重启网络。",
+ "status_details": "设备详情、资源与事件",
+ "health_details": "连接历史与状态灯",
  "title": "ESP32 网关管理",
  "summary": "IPv4 · AP+STA · SOCKS5 · 最多两台客户端",
  "loading_status": "正在读取状态…",
@@ -189,7 +245,7 @@ const chineseLabels={
  "poll_help": "前台每 10 秒刷新，后台暂停。",
  "metrics_heading": "诊断指标",
  "metrics_help": "内存总量指系统登记的可分配堆，不等于芯片全部物理 RAM；“已占用”按总量减剩余计算，包含分配器开销。栈显示历史最大使用量，不是当前使用量。最低内存和错误计数为本次启动以来累计值。上游是否可用请结合实际网页访问判断，互联网检测由下方手动/自动检查设置控制。",
- "maintenance_heading": "连接状态与维护",
+ "maintenance_heading": "连接维护",
  "health_help": "紫灯表示 AP+STA 就绪；绿灯表示最近 10 分钟内通过 SOCKS5 的 DNS+HTTP 检查成功。结果仅覆盖检测目标，不保证所有网站或 QUIC 正常。",
  "led_help": "蓝：上游未配置；红：STA 未就绪；紫：网络就绪、检查中或结果未知/过期；绿：最近检查成功；黄：网段冲突或当前检测目标连续两次检查失败。",
  "maintenance_help": "重连上游会中断代理流量，保留本地 AP；重建会关闭现有 TCP/UDP 代理连接。重启会断开所有连接，但不清除配置或口令。",
@@ -204,7 +260,7 @@ const chineseLabels={
  "events_help": "RAM 保留最近 64 条，此处显示最新 32 条；重启清空。相邻重复事件在 10 秒内合并。时间为启动后时间，不记录访问网址。错误代码：负数为 errno，1000+REP 为 SOCKS5 拒绝，2000+METHOD 为认证方法不支持。",
  "clients_heading": "已连接设备",
  "clients_help": "断开仅结束当前连接，不是黑名单；设备可能自动重连。流量为本次连接的代理数据，不含管理页面和所有 Wi-Fi 开销。",
- "config_heading": "网关配置",
+ "config_heading": "网络设置",
  "config_help": "保存后约 2 秒重启，当前连接会断开。重新连接 AP 并打开本页，在 180 秒内确认，否则恢复上一份配置。",
  "upstream_heading": "上游网络与代理",
  "ap_heading": "本地 AP 与客户端网络",
@@ -305,7 +361,50 @@ function eventName(event){
  if(key)return eventNames[key][pageLanguage==='zh-CN'?1:0];
  return typeof event.event==='string'&&(pageLanguage==='zh-CN'||!/[\u3400-\u9fff]/.test(event.event))?event.event:t('unknown');
 }
-const el=id=>document.getElementById(id), form=el('settings');let busy=false,polling=false,currentSubnet=4,lastStatus=null,mutationEpoch=0,internetDraft=false;
+// A zero means this stage passed. An unexecuted stage is not a failure.
+function firstProbeFailure(steps){
+ if(!Array.isArray(steps))return null;
+ for(let i=0;i<steps.length;i++){
+  const code=steps[i]&&steps[i].code;
+  if(typeof code!=='number'||code===5000)return null;
+  if(code!==0)return {stage:i,code};
+ }
+ return null;
+}
+function connectionGuidance(s,config){
+ const guide=(kind,action='diagnose',source='')=>({kind,action,source});
+ if(!config||typeof config.sta_ssid!=='string')return guide('unread','read_config');
+ if(config.sta_ssid==='')return guide('setup','settings');
+ if(s.subnet_overlap)return guide('subnet','advanced');
+ if(s.sta_connected===false)return guide('wifi','settings');
+ if(s.forwarding_ready===false)return guide('wait','details');
+ if(s.job_running)return guide('busy','diagnostics');
+ // Diagnostic jobs have no network-generation timestamp. Describe them as the
+ // last result, rather than asserting that a remembered failure is current.
+ if(s.job_action===4&&s.job_id&&!s.job_result){
+  const failure=firstProbeFailure(s.probe);
+  if(failure)return probeGuidance(failure,'diagnostic');
+ }
+ // The backend clears internet_checked_ms on network/target changes; only
+ // interpret complete, unexpired results for the current check target.
+ if(s.internet_checked_ms&&s.internet_state!==4){
+  const failure=firstProbeFailure(s.internet_probe);
+  if(failure)return probeGuidance(failure,'internet');
+ }
+ if(s.pending)return guide('trial','internet');
+ if((s.clients||[]).some(c=>c.ip==='0.0.0.0'))return guide('dhcp','details');
+ if(s.internet_state===2)return guide('pass','diagnostics');
+ if(s.job_action===4&&s.job_id&&!s.job_result&&Array.isArray(s.probe)&&s.probe.length===3&&s.probe.every(p=>p.code===0))return guide('probe_pass','internet');
+ return guide('check','internet');
+}
+function probeGuidance(failure,source){
+ const {stage,code}=failure;
+ const kind=stage===0?'port':stage===1?'auth':stage===2?(code>=4000&&code<5000?'dns':'udp'):
+  code>=2000&&code<3000?'auth':'target';
+ return {kind,action:source==='internet'?'internet':'diagnose',source};
+}
+const el=id=>document.getElementById(id), form=el('settings');let busy=false,polling=false,currentSubnet=4,lastStatus=null,mutationEpoch=0,internetDraft=false,loadedConfig=null,guideAction=null;
+const disclosureKeys=new Map();
 const message=text=>{el('message').textContent=text;};
 async function requestJSON(path,payload){
  const method=payload===undefined?'GET':'POST';
@@ -364,13 +463,39 @@ function createOperationFeedback(){
 const operationFeedback=createOperationFeedback();
 function operationView(){return operationFeedback.view(Date.now());}
 function showOperation(){const v=operationView();el('operation').hidden=!v.text;el('operation').textContent=v.text;el('recoveryLink').hidden=!v.url;if(v.url){el('managementLink').href=v.url;el('managementLink').textContent=t("open_address")+v.url;}return v;}
-function updateButtons(s){const v=showOperation();for(const b of document.querySelectorAll('button'))b.disabled=busy||v.blocked||!s;el('refresh').disabled=polling;for(const b of document.querySelectorAll('[data-action]'))b.disabled=busy||v.blocked||!s||!!(s&&(s.job_running||!s.control_available));for(const id of ['ledEnabled','internetAuto','internetTarget','saveInternet'])el(id).disabled=busy||v.blocked||!s||!!(s&&(s.job_running||!s.control_available));if(s)el('confirm').disabled=busy||v.blocked||!s.pending;}
+function updateButtons(s){const v=showOperation();for(const b of document.querySelectorAll('button'))b.disabled=busy||v.blocked||!s;el('refresh').disabled=polling;for(const b of document.querySelectorAll('[data-action]'))b.disabled=busy||v.blocked||!s||!!(s&&(s.job_running||!s.control_available));for(const id of ['ledEnabled','internetAuto','internetTarget','saveInternet'])el(id).disabled=busy||v.blocked||!s||!!(s&&(s.job_running||!s.control_available));if(s)el('confirm').disabled=busy||v.blocked||!s.pending;if(guideAction==='diagnose'||guideAction==='internet')el('guideAction').disabled=busy||v.blocked||!s||s.job_running||!s.control_available;}
 
 const api=requestJSON;
 const ago=(s,ms)=>ms?t("seconds_ago", (Math.max(0,Math.floor(s.uptime_seconds-ms/1000)))):t("no_record");
 const probeCode=n=>n===7000?t("http_body_mismatch"):n>=6000?t("http_status_mismatch")+(n-6000):n===0?t("success"):n===5000?t("not_run"):n<0?t("errno_failed", (-n)):n>=4000?t("dns_failed", (n-4000)):n===3000?t("invalid_response"):n>=2000?t("no_auth_unsupported", (n-2000)):n>=1000?t("socks_rejected", (n-1000)):t("code_failed", (n));
 const actions=[t("none"),t("reconnect"),t("relay_reset"),t("reboot"),t("diagnose"),t("internet"),t("reset_admin"),t("reset_network")];
+function openDetails(id,scroll=false){
+ const node=el(id);node.open=true;
+ if(scroll&&node.scrollIntoView)node.scrollIntoView({block:'start'});
+}
+function openOnce(key,...ids){
+ const channel=key.split(':')[0];
+ if(disclosureKeys.get(channel)===key)return;
+ disclosureKeys.set(channel,key);for(const id of ids)openDetails(id);
+}
+function overviewStatus(s){
+ const states=[t('internet_unconfirmed'),t('checking'),t('internet_passed'),t('internet_failed'),t('internet_expired')];
+ el('overview').textContent=t('overview_text',s.ap_ip,s.clients.length,s.ap_client_limit,
+  s.sta_connected?t('ipv4_ready'):t('not_ready'),s.sta_ip,states[s.internet_state]||t('unknown'));
+ const guide=connectionGuidance(s,loadedConfig);guideAction=guide.action;
+ el('nextTitle').textContent=t('guide_'+guide.kind+'_title');
+ el('nextHelp').textContent=t('guide_'+guide.kind+'_help');
+ el('guideAction').hidden=false;el('guideAction').textContent=t('guide_'+guideAction);
+ if(guide.kind==='setup')openOnce('setup','configDetails');
+ if(guide.kind==='subnet')openOnce('subnet','configDetails','advancedSettings');
+ if(guide.source)openOnce(guide.source+':'+(guide.source==='internet'?s.internet_checked_ms:s.job_id),'diagnosticsDetails');
+ const full=s.clients.length>=s.ap_client_limit||s.clients.reduce((n,c)=>n+c.tcp,0)>=s.tcp_flow_limit||s.clients.reduce((n,c)=>n+c.udp,0)>=s.udp_flow_limit;
+ const denied=s.clients.some(c=>c.tcp_denied||c.udp_denied);
+ el('capacityNote').hidden=!full&&!denied;
+ el('capacityNote').textContent=t('capacity_note',s.ap_client_limit,s.tcp_flow_limit,s.udp_flow_limit);
+}
 function runtimeStatus(s){
+ overviewStatus(s);
  el('health').textContent=t("health_text", (s.forwarding_ready?t("network_ready"):t("network_not_ready")), (s.sta_disconnect_reason), (ago(s,s.tcp_connect_ms)), (ago(s,s.tcp_data_ms)), (s.tcp_errors), (ago(s,s.tcp_error_ms)), (s.tcp_error), (ago(s,s.udp_reply_ms)), (ago(s,s.dns_reply_ms)), (s.udp_errors), (ago(s,s.udp_error_ms)), (s.udp_error));
  el('ledEnabled').checked=s.led_enabled;el('ledStatus').textContent=s.led_ready&&!s.led_error?t("led_ready", ([t("off"),t("blue"),t("red"),t("green"),t("yellow"),t("purple")][s.led_color]||t("initializing"))):t("led_unavailable", (s.led_error));
  for(const b of document.querySelectorAll('[data-action]'))b.disabled=s.job_running||!s.control_available;
@@ -387,21 +512,38 @@ function runtimeStatus(s){
 async function refreshEvents(){try{const r=await api('/api/events');el('events').textContent=r.events.slice().reverse().map(e=>`+${Math.floor(e.last_ms/1000)}s · ${eventName(e)} · ${pageLanguage==='zh-CN'?'详情':'detail'} ${e.detail}${e.count>1?' · '+e.count+t("event_times"):''}`).join('\n')||t("no_events");}catch(error){el('events').textContent=t("events_failed", (error.message));}}
 const kib=n=>`${(n/1024).toFixed(1)} KiB`,mib=n=>`${(n/1048576).toFixed(2)} MiB`;
 const usage=(free,total,unit)=>t("heap_usage", (unit(Math.max(0,total-free))), (unit(total)), (unit(free)));
-async function refresh(){if(polling||busy||document.hidden)return;polling=true;const epoch=mutationEpoch;try{const s=await api('/api/status');if(epoch!==mutationEpoch)return;const restarted=operationFeedback.observe(s,Date.now())==='reboot'||!!(lastStatus&&s.boot_id!==undefined&&lastStatus.boot_id!==s.boot_id);lastStatus=s;if(restarted)internetDraft=false;runtimeStatus(s);el('status').textContent=t("status_text", (s.firmware), (s.ap_ip), (s.clients.length), (s.ap_client_limit), (s.sta_connected?t("ipv4_ready"):t("not_ready")), (s.sta_ip), (s.sta_connected?s.sta_rssi+t("signal_channel")+s.channel:'—'), (Math.floor(s.uptime_seconds/60)), (usage(s.internal_free,s.internal_total,kib)), (kib(s.internal_min)), (kib(s.internal_largest)), (usage(s.psram_free,s.psram_total,mib)));
+async function refresh(){if(polling||busy||document.hidden)return;polling=true;const epoch=mutationEpoch;try{const s=await api('/api/status');if(epoch!==mutationEpoch)return;const restarted=operationFeedback.observe(s,Date.now())==='reboot'||!!(lastStatus&&s.boot_id!==undefined&&lastStatus.boot_id!==s.boot_id);lastStatus=s;if(restarted){internetDraft=false;loadedConfig=null;disclosureKeys.clear();await loadConfig();}runtimeStatus(s);el('status').textContent=t("status_text", (s.firmware), (s.ap_ip), (s.clients.length), (s.ap_client_limit), (s.sta_connected?t("ipv4_ready"):t("not_ready")), (s.sta_ip), (s.sta_connected?s.sta_rssi+t("signal_channel")+s.channel:'—'), (Math.floor(s.uptime_seconds/60)), (usage(s.internal_free,s.internal_total,kib)), (kib(s.internal_min)), (kib(s.internal_largest)), (usage(s.psram_free,s.psram_total,mib)));
 el('status').textContent+=t("diagnostic_flags", (s.verbose_diagnostics?t("on"):t("off")), (s.automatic_link_probe?t("on"):t("off")));
 el('metrics').textContent=t("metrics_text", (s.clients.reduce((n,c)=>n+c.tcp,0)), (s.tcp_flow_limit), (s.clients.reduce((n,c)=>n+c.udp,0)), (s.udp_flow_limit), (s.tcp_pcb_live), (s.tcp_pcb_limit), (s.tcp_pcb_peak), (s.tcp_pcb_failures), (s.ap_tx_errors), (s.sta_tx_errors), (s.clone_failures), (s.client_rto), (s.upstream_rto), (s.client_fast), (s.upstream_fast), (s.http_stack_total-s.http_stack_min), (s.http_stack_total), (s.http_stack_min), (s.reset_reason));
 el('trial').hidden=!s.pending;el('trialText').textContent=t("confirm_remaining", (s.confirm_seconds));
-const list=el('clients');list.replaceChildren();if(!s.clients.length)list.textContent=t("no_clients");for(const c of s.clients){const row=document.createElement('div');row.className='client';const text=document.createElement('pre');text.textContent=t("client_text", (c.ip), (c.mac), (c.rssi??'—'), (c.tcp), (c.udp), (mib(c.up_bytes)), (mib(c.down_bytes)), (c.tcp_denied), (c.udp_denied));row.append(text);const button=document.createElement('button');button.textContent=t("disconnect_client");button.disabled=c.ip==='0.0.0.0';button.onclick=()=>{if(window.confirm(t("disconnect_warning", (c.ip))))mutate('/api/kick',{token:c.token});};row.append(button);list.append(row);}message(s.subnet_overlap?t("subnet_warning", (s.sta_ip), (s.sta_netmask), (s.ap_ip), (s.ap_netmask)):(s.pending?t("trial_notice"):t("status_updated")));if(restarted){await loadConfig();for(const key of ['sta_password','ap_password','admin_password'])form.elements[key].value='';}await refreshEvents();}catch(e){if(epoch===mutationEpoch){const v=operationView();message(v.restarting?t("restart_read_failed", (e.message)):t("read_failed", (e.message)));}}finally{polling=false;updateButtons(lastStatus);}}
+const list=el('clients');list.replaceChildren();if(!s.clients.length)list.textContent=t("no_clients");for(const c of s.clients){const row=document.createElement('div');row.className='client';const text=document.createElement('pre');text.textContent=t("client_text", (c.ip), (c.mac), (c.rssi??'—'), (c.tcp), (c.udp), (mib(c.up_bytes)), (mib(c.down_bytes)), (c.tcp_denied), (c.udp_denied));row.append(text);const button=document.createElement('button');button.textContent=t("disconnect_client");button.disabled=c.ip==='0.0.0.0';button.onclick=()=>{if(window.confirm(t("disconnect_warning", (c.ip))))mutate('/api/kick',{token:c.token});};row.append(button);list.append(row);}message(s.subnet_overlap?t("subnet_warning", (s.sta_ip), (s.sta_netmask), (s.ap_ip), (s.ap_netmask)):(s.pending?t("trial_notice"):t("status_updated")));if(restarted){for(const key of ['sta_password','ap_password','admin_password'])form.elements[key].value='';}await refreshEvents();}catch(e){if(epoch===mutationEpoch){const v=operationView();message(v.restarting?t("restart_read_failed", (e.message)):t("read_failed", (e.message)));}}finally{polling=false;updateButtons(lastStatus);}}
 async function mutate(path,payload){if(busy||operationView().blocked)return;if(!lastStatus){message(t("read_first"));return;}busy=true;mutationEpoch++;const kind=payload.action||path.split('/').pop();operationFeedback.begin(kind,lastStatus,location.origin+'/',Date.now());updateButtons(lastStatus);try{const data=await api(path,payload);operationFeedback.accept(data,Date.now());if(payload.action==='internet_settings'&&data.saved===true)internetDraft=false;if(data.reboot){for(const key of ['sta_password','ap_password','admin_password'])form.elements[key].value='';}}catch(e){operationFeedback.reject(e,Date.now());}finally{busy=false;updateButtons(lastStatus);if(!operationView().otherAddress)await refresh();}}
 el('internetAuto').onchange=el('internetTarget').onchange=()=>{internetDraft=true;};
 el('saveInternet').onclick=()=>mutate('/api/action',{action:'internet_settings',enabled:el('internetAuto').checked,target:Number(el('internetTarget').value)});
 el('ledEnabled').onchange=()=>mutate('/api/action',{action:'led',enabled:el('ledEnabled').checked});
 for(const b of document.querySelectorAll('[data-action]'))b.onclick=()=>{
  const action=b.dataset.action;
+ if(action==='diagnose'||action==='internet')openDetails('diagnosticsDetails');
  const warning=action==='reboot'?t("reboot_warning"):action==='relay_reset'?t("relay_warning"):action==='reconnect'?t("reconnect_warning"):null;
  if(!warning||window.confirm(warning))mutate('/api/action',{action});
 };
+el('guideAction').onclick=async()=>{
+ if(guideAction==='settings'||guideAction==='advanced'){
+  openDetails('configDetails',true);if(guideAction==='advanced')openDetails('advancedSettings');
+ }else if(guideAction==='details')openDetails('statusDetails',true);
+ else if(guideAction==='diagnostics')openDetails('diagnosticsDetails',true);
+ else if(guideAction==='read_config'){
+  try{await loadConfig();await refresh();}catch(error){message(t('config_read_failed',error.message));}
+ }else{
+  openDetails('diagnosticsDetails',true);await mutate('/api/action',{action:guideAction});
+ }
+};
+// Keep native validation usable when an invalid field is inside a closed panel.
+form.addEventListener('invalid',event=>{
+ openDetails('configDetails');
+ if(el('advancedSettings').contains(event.target))openDetails('advancedSettings');
+},true);
 form.onsubmit=e=>{e.preventDefault();const data=Object.fromEntries(new FormData(form));data.sta_open=form.elements.sta_open.checked;data.socks_port=Number(data.socks_port);data.max_clients=Number(data.max_clients);data.ap_subnet=Number(data.ap_subnet);if(window.confirm(t("save_warning", (data.ap_subnet), (currentSubnet))))mutate('/api/config',data);};
 el('confirm').onclick=()=>mutate('/api/confirm',{});el('defaults').onclick=()=>{if(window.confirm(t("defaults_warning")))mutate('/api/defaults',{});};el('refresh').onclick=refresh;
-async function loadConfig(){const c=await api('/api/config');currentSubnet=c.ap_subnet;for(const [key,value]of Object.entries(c))if(form.elements[key])form.elements[key].value=value;}async function init(){try{await loadConfig();}catch(e){message(t("config_read_failed", (e.message)));}await refresh();}document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});setInterval(()=>{const v=showOperation();if(!v.otherAddress&&Date.now()-lastPoll>=(v.blocked?3000:10000)){lastPoll=Date.now();refresh();}},1000);let lastPoll=Date.now();updateButtons(lastStatus);init();
+async function loadConfig(){const c=await api('/api/config');loadedConfig=c;currentSubnet=c.ap_subnet;for(const [key,value]of Object.entries(c))if(form.elements[key])form.elements[key].value=value;}async function init(){try{await loadConfig();}catch(e){message(t("config_read_failed", (e.message)));}await refresh();}document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});setInterval(()=>{const v=showOperation();if(!v.otherAddress&&Date.now()-lastPoll>=(v.blocked?3000:10000)){lastPoll=Date.now();refresh();}},1000);let lastPoll=Date.now();updateButtons(lastStatus);init();
 </script></html>

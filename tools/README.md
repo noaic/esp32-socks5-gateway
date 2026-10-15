@@ -1,6 +1,8 @@
 # Tool usage
 
-Run commands from the project root. Use the activated ESP-IDF Python environment for lwIP preparation and UART capture; it includes pyserial/esptool. Other Python tools use the standard library, except the optional QUIC probe, which needs `aioquic`. Firmware does not run these host tools.
+Run commands from the project root. Use the activated ESP-IDF Python environment for lwIP preparation and UART capture; it includes pyserial/esptool. Most validation/reporting tools use the standard library; the optional flashing helper needs esptool to write hardware, and the QUIC probe needs `aioquic`. Firmware does not run these host tools.
+
+Users with a precompiled BIN can start with the [SDK-free flashing guide](../docs/flash-prebuilt.md). Official esptool or Espressif's Windows GUI can flash it directly. Building and packaging are developer tasks; users need neither ESP-IDF nor a project-specific script to flash downloaded firmware.
 
 Replace the example LAN addresses, ports and serial ports with yours. The commands below show test setup, not evidence of working services at those addresses. Use only one process per serial port. Linux/WSL2 paths and PowerShell paths are shown separately where they differ.
 
@@ -17,7 +19,41 @@ python tools/prepare_lwip.py check
 python tools/prepare_lwip.py restore
 ```
 
-Restore is not a full component integrity check. Run `apply`/`check` again before building the default transparent mode. An explicit `--idf-path` may replace `IDF_PATH`. See the [build guide](../README.md#install-the-toolchain-and-build) for exact revisions and LF/CRLF handling; the tool never patches the global SDK.
+Restore is not a full component integrity check. Run `apply`/`check` again before building the default transparent mode. An explicit `--idf-path` may replace `IDF_PATH`. See the [build guide](../docs/build-and-flash.md) for exact revisions and LF/CRLF handling; the tool never patches the global SDK.
+
+## Package and flash precompiled firmware
+
+After building a clean public-default N16R8 configuration, create a new output directory:
+
+```text
+python tools/package_firmware.py --build-dir build --output-dir dist/esp32-socks5-gateway-n16r8-local
+```
+
+The packager checks pinned SDK/override provenance, hardware settings, public compiled defaults and the exact three build images. It refuses private/custom compiled settings and an existing output directory. It generates:
+
+- `factory.bin`: bootloader, partition table and application merged for writing at `0x0`. Gaps contain `0xFF`, including NVS; **this resets saved network and management settings**. It is not a device dump or a Flash-sized padded image.
+- `app.bin`: the application at `0x10000`, for updates with compatible existing bootloader, partitions and settings. These normally preserve NVS.
+- `images/`: the original three separate images, with offsets recorded in `manifest.json`.
+- `SHA256SUMS`, `FLASHING.md`, `LICENSE`, `THIRD_PARTY_NOTICES.md`, `LICENSES/`: checksums, instructions and applicable licenses.
+- `firmware.zip` and `firmware.zip.sha256`: the same payload in a convenient archive, with a separate archive checksum. **No host scripts are included.** `SHA256SUMS` covers payload files and the manifest, not itself or the archive.
+
+It excludes private NVS contents, `sdkconfig`, ELF files and the source checkout. Dirty source builds are identified in provenance. Packaging does not upload or publish a release. See the [precompiled guide](../docs/flash-prebuilt.md) for ordinary official-tool flashing, native checksum checks and serial monitoring.
+
+### Optional repository flashing helper
+
+For developers who want additional package/layout checks, `tools/flash_firmware.py` remains in the source checkout. From the project root, check a generated directory without touching hardware:
+
+```text
+python tools/flash_firmware.py --directory dist/esp32-socks5-gateway-n16r8-local --check
+```
+
+The same `--directory` may point to a fully extracted `firmware.zip`. To flash, install `esptool==5.5.0` in the Python environment running the helper, then specify the real port:
+
+```text
+python tools/flash_firmware.py --directory dist/esp32-socks5-gateway-n16r8-local --port COM5
+```
+
+On Linux, replace `COM5` with `/dev/ttyACM0` or the actual serial device. `--baud 460800` is optional; the default is 115200. The helper verifies package files/layout and checks the chip and 16 MB Flash before writing. It writes **the three split images**, not `factory.bin`, leaving the current NVS range outside the write. Existing settings normally survive, but incompatible configuration or firmware NVS recovery may still reset them. PSRAM is checked by firmware at boot. Hashes detect corruption; they do not establish the trustworthiness of the download source.
 
 ## Serial capture
 

@@ -14,7 +14,7 @@
 - [性能与适用场景](#性能与适用场景)
 - [准备硬件和软件](#准备硬件和软件)
 - [准备上游 SOCKS5 服务](#准备上游-socks5-服务)
-- [安装工具链并编译](#安装工具链并编译)
+- [选择固件与刷写方式](#选择固件与刷写方式)
 - [烧录并完成首次联网](#烧录并完成首次联网)
 - [日常使用与状态灯](#日常使用与状态灯)
 - [常见问题与排查](#常见问题与排查)
@@ -94,16 +94,13 @@ LED 引脚不同需要匹配配置。当前启动检查要求双核、恰好 16 
 
 ### 软件
 
-| 类别 | 依赖与用途 | 如何准备 |
-| --- | --- | --- |
-| 必需：开发环境 | Git、Python ≥ 3.10（建议 3.12）、CMake ≥ 3.22、Ninja | Windows 用官方 EIM 检查并安装；Linux 按下文安装系统包。当前 IDF 工具清单推荐 CMake 4.0.3、Ninja 1.12.1 |
-| 必需：SDK | 指定提交的 ESP-IDF v6.1 与 esp-lwIP | 见下方提交表；ESP-IDF 中已包含 FreeRTOS 和 lwIP，不必单独安装它们 |
-| 自动管理：工具链 | Xtensa GCC 15.2.0，生成 ESP32-S3 固件；以及 esptool、Python 构建工具和 Component Manager | EIM 或 ESP-IDF 安装脚本依据此提交的工具清单安装 |
-| 自动管理：组件 | cJSON 1.7.19、led_strip 3.0.3 | `main/idf_component.yml` 声明，`dependencies.lock` 固定版本和哈希，首次构建下载到 `managed_components/` |
-| 必需：使用环境 | 浏览器、已有 2.4 GHz Wi-Fi、支持 IPv4 / NO AUTH / UDP ASSOCIATE 的 SOCKS5 服务 | 用户自行准备；仅编译和宿主测试无需实际代理服务 |
-| 可选：开发测试 | Linux 系统 GCC/binutils、Node.js；ccache 可加速重复构建 | GCC 用于宿主 C 测试，Node.js 用于前端测试，均不是固件中的运行依赖 |
+| 用途 | 需要准备 |
+| --- | --- |
+| 刷入预编译 BIN | 官方 esptool 5.5.0（Python ≥ 3.10），或乐鑫 Windows 图形工具；必要时安装串口驱动。**无需 ESP-IDF 或项目脚本**。见[固件刷写](docs/flash-prebuilt.zh-CN.md) |
+| 自行编译固件 | Git、Python、精确版本的 ESP-IDF/工具链与托管组件，完整步骤见[编译指南](docs/build-and-flash.zh-CN.md) |
+| 使用网关 | 浏览器、已有 2.4 GHz Wi-Fi，以及下文要求的 SOCKS5 服务 |
 
-管理页和首次设置页默认英文；浏览器首选语言为中文（`zh` 或 `zh-*`）时显示简体中文，其他语言或无法识别时使用英文。首选英文、备用中文时仍显示英文。串口命令为英文。电脑上的系统 GCC 与 ESP32 的交叉编译器用途不同；不要用前者替换固件工具链，也不要为通过构建而更新锁文件。
+管理页和首次设置页默认英文；浏览器首选语言为中文（`zh` 或 `zh-*`）时显示简体中文，其他语言或无法识别时使用英文。首选英文、备用中文时仍显示英文。串口命令为英文。
 
 ## 准备上游 SOCKS5 服务
 
@@ -132,224 +129,31 @@ LED 引脚不同需要匹配配置。当前启动检查要求双核、恰好 16 
 
 上游 SOCKS5 服务使用 [Xray](https://github.com/XTLS/Xray-core) 时，可先阅读 [VLESS + TCP + REALITY 完整客户端模板](examples/xray-client-reality.json)及其 [字段位置与使用说明](examples/README.md)。它运行在局域网电脑上；须将所有 `<...>` 占位符替换为自己的 LAN 地址和远端节点参数，再执行配置检查或启动。原有 [SOCKS 设置示例](examples/xray-socks-settings.json)及 DNS 示例仍是用于合并到已有配置的片段。其他代理软件只要满足上述条件也可以使用。无认证的代理应仅对可信网络开放。
 
-## 安装工具链并编译
+## 选择固件与刷写方式
 
-Windows 使用 **PowerShell**，Linux / WSL2 使用 **Bash**；请只执行对应系统的命令。SDK 和项目路径应避免空格及非 ASCII 字符，例如 Windows 的 `C:\esp`。以下步骤只在新目录中准备 SDK，不覆盖其他项目正在使用的 ESP-IDF。
+可以直接刷入预编译 BIN，**无需安装 ESP-IDF 或运行项目脚本**；需要修改编译默认值或继续开发时再从源码构建。
 
-### 1. 安装本项目对应的 ESP-IDF
-
-本项目为透明转发使用了一个小型 lwIP 补丁。lwIP 是 ESP-IDF 内部处理 TCP/IP 的网络库；补丁依赖其具体源码，所以仅显示“v6.1”还不够，必须匹配下面的提交：
-
-| 依赖 | 精确提交 |
+| 目的 | 对应指南 |
 | --- | --- |
-| ESP-IDF v6.1 | `fff9895c82d744c7237be8847347bdd1b07c6643` |
-| esp-lwIP | `c6f2f878e7b0f86033214b85547d579be43351e3` |
+| 首次安装 / 重置 | 完整 `factory.bin` 写入 `0x0`，**会重置已保存的配置**。[Windows 11 / Linux 指南](docs/flash-prebuilt.zh-CN.md)包含官方命令行与 Windows 图形操作 |
+| 兼容的应用更新 | `app.bin` 写入 `0x10000`，通常保留配置；要求板上 Bootloader、分区和配置版本兼容 |
+| 自行编译固件 | [Windows 11 / Linux / WSL2 编译与刷写](docs/build-and-flash.zh-CN.md)：精确 SDK 提交、lwIP Override、配置、编译、分区及构建排错 |
 
-#### Windows 11：官方 EIM 与 PowerShell
+从可信的[项目发布页](https://github.com/noaic/esp32-socks5-gateway/releases)或成功的固件构建产物下载 BIN、校验值和版权说明。可选的 `firmware.zip` 将这些文件打包，里面不含主机端脚本。如果暂时没有产物，则按源码指南编译。默认镜像使用下文的 AP 信息，不预置上游 Wi-Fi 口令。**当前要求 ESP32-S3 N16R8**。
 
-1. 从 [乐鑫官方页面](https://dl.espressif.com/dl/eim/) 下载 EIM 图形安装器。按 [Windows 官方安装说明](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/get-started/windows-setup.html)完成依赖检查；若 Git 尚未可用，先安装 [Git for Windows](https://git-scm.com/install/windows)，再打开新的 PowerShell。无需使用 `winget`。
-2. 在普通 PowerShell 中将指定提交放入**尚不存在的** `C:\esp\esp-idf-gateway`。准备脚本兼容 LF 和 CRLF 检出，无需调整 Git 换行设置：
-
-```powershell
-git --version
-New-Item -ItemType Directory -Force C:\esp | Out-Null
-git clone --no-checkout --depth 1 https://github.com/espressif/esp-idf.git C:\esp\esp-idf-gateway
-Set-Location C:\esp\esp-idf-gateway
-git fetch --depth 1 origin fff9895c82d744c7237be8847347bdd1b07c6643
-git checkout --detach fff9895c82d744c7237be8847347bdd1b07c6643
-git submodule update --init --recursive --depth 1
-```
-
-3. 在 EIM 中选择 **Custom Installation**，将路径指向这个现有的 Git 目录。官方 [Expert Installation](https://docs.espressif.com/projects/idf-im-ui/en/latest/expert_installation.html)支持使用已有仓库而不改写其内容。安装该检出的工具链、CMake、Ninja 和 Python 环境；使用此目录，不要另外安装“最新版本”后直接用它构建。
-4. 安装完成后，在 EIM 的 **Manage Installations → Open IDF Terminal** 中打开对应安装的 PowerShell，或使用它生成的 PowerShell 快捷方式。**后续 Windows 命令都在该已激活终端执行**，新开普通 PowerShell 不会自动带上环境：
-
-```powershell
-python --version
-idf.py --version
-git -C "$env:IDF_PATH" rev-parse HEAD
-git -C "$env:IDF_PATH\components\lwip\lwip" rev-parse HEAD
-git -C "$env:IDF_PATH\components\lwip\lwip" ls-files --eol src/core/ipv4/ip4.c
-cmake --version
-ninja --version
-```
-
-两个提交输出须与表中一致。换行命令仅用于诊断：`i/lf w/lf` 和 `i/lf w/crlf` 都受支持，后者表示 Git 检出了 Windows 换行，并不等于源码被修改，无需因此重装已有 SDK。EIM 使用其生成的激活入口；传统脚本安装在该 SDK 目录中，PowerShell 安装用 `.\install.ps1 esp32s3`，激活用 `.\export.ps1`，CMD 对应 `install.bat esp32s3` / `export.bat`。Windows 不使用 Bash 的 `source`。
-
-#### Linux：Ubuntu/Debian 或 Fedora，Bash
-
-Ubuntu/Debian 使用 [官方系统包列表](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/get-started/linux-macos-setup-legacy.html)，建议选择提供 Python ≥ 3.10 的版本，例如 Ubuntu 22.04 或更新版本：
-
-```bash
-sudo apt-get update
-sudo apt-get install git wget flex bison gperf python3 python3-pip python3-venv cmake ninja-build ccache libffi-dev libssl-dev dfu-util libusb-1.0-0
-```
-
-Fedora 对应包名不同，使用 `dnf`；其 Python 包提供 `venv` 模块：
-
-```bash
-sudo dnf install git wget flex bison gperf python3 python3-pip cmake ninja-build ccache libffi-devel openssl-devel dfu-util libusb1
-```
-
-接下来使用独立的 SDK 目录；`esp-idf-gateway` 应尚不存在：
-
-```bash
-mkdir -p ~/esp
-cd ~/esp
-
-git clone --no-checkout --depth 1 https://github.com/espressif/esp-idf.git esp-idf-gateway
-cd esp-idf-gateway
-git fetch --depth 1 origin fff9895c82d744c7237be8847347bdd1b07c6643
-git checkout --detach fff9895c82d744c7237be8847347bdd1b07c6643
-git submodule update --init --recursive --depth 1
-
-./install.sh esp32s3
-python3 tools/idf_tools.py install cmake ninja
-source ./export.sh
-```
-
-安装脚本下载匹配的编译器和 Python 依赖；另行请求 CMake/Ninja 可避免系统工具过旧。**每次打开新 Bash 都要重新激活**，然后检查实际版本：
-
-```bash
-source ~/esp/esp-idf-gateway/export.sh
-idf.py --version
-git -C "$IDF_PATH" rev-parse HEAD
-git -C "$IDF_PATH/components/lwip/lwip" rev-parse HEAD
-cmake --version
-ninja --version
-```
-
-#### 能否复用已有环境？
-
-已安装的 SDK 只有在两个 Git 提交都匹配、子模块完整且全局 lwIP 源码未经修改时，才能直接复用。先通过它自己的激活入口运行上述检查；同样显示“v6.1”不代表同一提交。若不同，为本项目新建独立 SDK，不要在共享安装上直接 `git pull` 或切换版本。EIM 安装使用 EIM 的终端；脚本安装使用对应 `export` 脚本。
-
-浅克隆时 `idf.py --version` 可能提示 `Git version unavailable`，随后读取源码版本；仍以两个精确提交和补丁脚本的校验为准。
-
-WSL2 应在 Linux 发行版内执行 Linux 安装步骤，不能直接复用 Windows 编译器。USB 映射见下方刷写说明；macOS 用户可参考官方指南，Bash 的项目命令相同。
-
-### 2. 获取项目并准备 lwIP
-
-Windows 已激活的 PowerShell：
-
-```powershell
-git clone https://github.com/noaic/esp32-socks5-gateway.git C:\esp\esp32-socks5-gateway
-Set-Location C:\esp\esp32-socks5-gateway
-python tools/prepare_lwip.py apply
-python tools/prepare_lwip.py check
-```
-
-Linux / WSL2 已激活的 Bash：
-
-```bash
-git clone https://github.com/noaic/esp32-socks5-gateway.git ~/esp32-socks5-gateway
-cd ~/esp32-socks5-gateway
-python3 tools/prepare_lwip.py apply
-python3 tools/prepare_lwip.py check
-```
-
-已有项目目录时直接进入该目录，不必重复克隆。后续的项目命令都在**包含 `CMakeLists.txt` 的项目根目录**执行。
-
-`patches/lwip-v6.1-transparent-tcp.patch` 保存 `ip4.c` 的改动，`patches/lwip-v6.1.json` 记录两个提交与修改前后的 SHA-256。脚本从 `$IDF_PATH/components/lwip` 复制整个组件及其 lwIP 子模块到项目 `components/lwip`，再只修改该副本。ESP-IDF 的 [同名组件优先规则](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/api-guides/build-system.html#multiple-components-with-the-same-name)会选用项目副本，因此全局 SDK 和其他项目不受影响；生成目录已被 Git 忽略。
-
-校验 `ip4.c` 时，脚本在内存中将 CRLF 视为 LF，仍使用原有固定哈希。`apply`、`restore` 只将已验证的项目副本写为 LF；补丁文件本身为 CRLF 时也可使用，不会改写补丁文件。`check` 完全只读。复制或校验前，`apply`/`check` 还会将**全局 lwIP 组件和子模块的全部文件与 Git 已提交内容比较**：即使 HEAD 正确，也会拒绝修改、缺失或额外的源文件。文本允许 LF/CRLF 检出差异，二进制须逐字节一致；代码或空白修改、BOM（编码标记）及单独的 CR 差异不会放行。项目副本除已打补丁的 `ip4.c` 外，还须与这份已验证的 SDK 一致。
-
-以下命令两种终端都可执行（Linux 也可用 `python3`）：
-
-| 命令 | 具体用途 |
-| --- | --- |
-| `python tools/prepare_lwip.py apply` | 检查版本和内容，创建或复用本地副本，将其中的 `ip4.c` 规范为 LF 并应用补丁；可重复执行 |
-| `python tools/prepare_lwip.py check` | 只读检查提交、按 LF 计算的原始/补丁哈希及完整组件的文件列表和内容 |
-| `python tools/prepare_lwip.py restore` | 将已验证的本地 `ip4.c` 反向还原为 LF，无需激活 SDK；保留本地组件目录，不自动关闭透明功能 |
-
-`restore` 只验证本地 `ip4.c` 的补丁状态，用于离线还原，不是全 SDK/组件完整性检查。完整验证应使用 `apply` 和 `check`。
-
-默认配置启用了透明模式，`restore` 后必须重新 `apply`、`check` 才能继续正常构建；`check` 会拒绝未打补丁的副本。若已有构建曾引用全局 lwIP，准备副本后运行 `idf.py reconfigure` 再构建。版本错误会列出预期与实际提交；哈希错误表示存在 LF/CRLF 之外的差异。先备份并检查 SDK 或本地副本的意外修改，或准备独立的干净 SDK，不要强行覆盖。`apply`、`check` 也会拒绝其他组件文件的变化，写入时拒绝通过本地符号链接修改其他位置。未来升级 ESP-IDF/esp-lwIP 可能改变 `ip4.c` 路径、钩子位置或接口，需要另行审查和适配补丁，不能只改提交或哈希来绕过检查。
-
-### 3. 配置并编译
-
-以下配置与构建命令在两种已激活终端中相同：
-
-```text
-idf.py menuconfig
-```
-
-打开 `Transparent gateway Wi-Fi`：
-
-- 第一次可以保持上游 `SSID` 为空，稍后通过管理页面填写；此时 AP 会启动，但 ESP32 不尝试连接上游。
-- 将 `SoftAP WPA2 password` 改为你自己的 AP 密码，使用 8～63 个 ASCII 字符。
-- AP 名称可以保留 `ESP32-Transparent-Proxy`。
-- 其他硬件和网络参数先保留默认值；日常使用无需开启 `Temporary gateway diagnostics`。
-
-保存并退出菜单后执行：
-
-```text
-idf.py build
-idf.py size
-```
-
-`build` 生成固件；`size` 查看固件占用，并不烧录。首次构建会下载组件，所需时间比后续构建长。
-
-`sdkconfig.defaults` 提供 ESP32-S3、Flash 和 PSRAM 等初始配置；一旦已有 `sdkconfig`，defaults 不会自动覆盖它。因此，旧项目的配置也应检查是否匹配板型。
-
-Linux x86_64 的补丁准备、编译和容量检查已验证；Windows 11/EIM、发行版包安装和 WSL2 USB 操作依据官方说明核对，仍需对应系统与实体开发板验证。
+源码指南保留完整环境命令。不能任意换成更新的 ESP-IDF：`ip4.c` 补丁和依赖固定版本必须匹配。
 
 ## 烧录并完成首次联网
 
 ### 1. 将固件写入开发板
 
-Windows 11 在“设备管理器 → 端口（COM 和 LPT）”中比较插拔前后的设备，找到新增的 COM 端口；按板上 USB 桥类型安装厂商驱动。Linux 可比较插拔前后的串口列表，并检查权限：
+按[预编译固件指南](docs/flash-prebuilt.zh-CN.md)或[源码构建指南](docs/build-and-flash.zh-CN.md)操作；两者说明了串口识别、Linux 权限和 WSL2 USB 映射。**`factory.bin` 即使不执行全 Flash 擦除，也会覆盖 NVS 配置。**兼容的应用更新或分段刷写通常保留 NVS，不要把全 Flash 擦除当作日常更新步骤。
 
-```bash
-ls /dev/ttyACM* /dev/ttyUSB* 2>/dev/null
-ls -l /dev/ttyACM0
-```
-
-`/dev/ttyACM0` 和 `COM5` 都只是示例，替换为实际端口；macOS 通常为 `/dev/cu.*`。若 Linux 串口所属组为 `dialout`，可执行 `sudo usermod -aG dialout "$USER"`，注销后重新登录；其他组按设备实际权限处理，不要靠长期使用 root 烧录。
-
-Linux 已激活的项目终端：
-
-```bash
-idf.py -p /dev/ttyACM0 flash monitor
-```
-
-Windows 已激活的 PowerShell 项目终端：
-
-```powershell
-idf.py -p COM5 flash monitor
-```
-
-`flash` 写入固件，`monitor` 打开串口日志，波特率为 **115200**。按 `Ctrl+]` 可退出 ESP-IDF monitor。烧录、monitor 和其他串口工具不要同时占用同一个设备。
-
-当前配置使用 **UART0 控制台**，优先连接板上标为 UART / USB-UART 的接口；原生 USB 能烧录不代表该接口能显示本固件的 UART 日志。无法自动进入下载模式时，按板卡说明使用 BOOT/EN。
-
-**WSL2 USB：**先在 Windows 安装 [usbipd-win，按微软说明操作](https://learn.microsoft.com/en-us/windows/wsl/connect-usb)，并启动 WSL2 发行版。以下是 Windows PowerShell 命令；`4-4` 是示例 BUSID，必须替换为 `usbipd list` 中的设备。`bind` 需要管理员权限：
-
-```powershell
-usbipd list
-usbipd bind --busid 4-4
-usbipd attach --wsl --busid 4-4
-```
-
-然后在 WSL Bash 中重新查找 `/dev/ttyACM*` / `/dev/ttyUSB*`，按 Linux 命令烧录。设备复位后可能重新枚举，需重新确认映射；同一 USB 设备不能同时供 Windows 和 WSL 的串口工具使用。
-
-#### 分区、镜像与重复刷写
-
-`partitions.csv` 定义了以下布局；16 MB Flash 中剩余空间未分配，当前没有 OTA 或文件系统分区：
-
-| 分区 | 起始地址 | 大小 | 用途 |
-| --- | --- | --- | --- |
-| `nvs` | `0x9000` | `0x6000`（24 KiB） | 持久配置等 NVS 数据 |
-| `phy_init` | `0xf000` | `0x1000`（4 KiB） | PHY 初始化数据预留区；当前配置不生成单独的 PHY 镜像 |
-| `factory` | `0x10000` | 4 MiB | 应用程序 |
-
-正常构建生成 `build/bootloader/bootloader.bin`（启动应用）、`build/partition_table/partition-table.bin`（描述布局）和 `build/esp32-socks5-gateway.bin`（应用）。当前 `build/flash_args` 分别安排在 `0x0`、`0x8000`、`0x10000`；`idf.py flash` 会按构建参数处理，无需手工猜偏移。
-
-普通刷写只擦写所需镜像范围，不等于 `erase-flash`；分区布局一致时，现有 NVS 设置通常保留。擦除整片会清除网络与管理口令，完整合并镜像的填充区也可能覆盖 NVS。不要将擦除作为例行升级步骤；更换分区布局或不兼容的配置格式前应先保存设置。原有 NVS 配置优先于新固件的编译默认值。
-
-例外是启动时遇到 `ESP_ERR_NVS_NO_FREE_PAGES` 或 `ESP_ERR_NVS_NEW_VERSION_FOUND`：当前代码会擦除 NVS 后重试，配置可能丢失。如果启动未通过硬件/NVS 检查，串口恢复命令尚未启动，应先查看开机日志。见 [恢复边界](docs/maintenance.md#tested-boundary)。
+控制台使用 **UART0、115200 波特率**。查看日志和输入命令优先使用开发板的 UART / USB-UART 接口；能通过原生 USB 刷写，不代表该接口能显示 UART 日志。刷写前退出其他串口程序。
 
 ### 2. 连接 ESP32 创建的 Wi-Fi
 
-在手机或电脑上连接 `ESP32-Transparent-Proxy`，使用你在 `menuconfig` 设置的 AP 密码。未修改时，开发默认密码是 `esp32proxy`，应在正常使用前更换。
+在手机或电脑上连接 `ESP32-Transparent-Proxy`，使用固件包说明或自行编译时设置的 AP 密码。未修改时，开发默认密码是 `esp32proxy`，应在正常使用前更换。
 
 首次上游尚未配置，手机可能提示“此 Wi-Fi 无法访问互联网”。请选择保持连接；此时能访问本地管理页面就可以继续。为确认流量确实经过 ESP32，可在初次验证时暂时关闭手机的移动数据 / 自动切换网络功能。
 
@@ -371,7 +175,7 @@ SOCKS5 上游使用 NO AUTH，因此这里没有 SOCKS5 用户名 / 密码输入
 
 ### 4. 填写网络和代理参数
 
-在“网关配置”中填写；以下采用中文界面名称，浏览器首选英文时对应 “Gateway configuration”：
+打开“网络设置”并填写；以下采用中文界面名称，浏览器首选英文时对应 “Network settings”：
 
 | 页面字段 | 应填写的内容 |
 | --- | --- |
@@ -406,7 +210,7 @@ flowchart TD
 
 ## 日常使用与状态灯
 
-管理页面可查看运行状态、已连接设备、逐设备的代理流量、最近事件，也可重连上游 Wi-Fi、关闭现有代理连接或重启设备。这些操作可能中断正在进行的下载和视频播放，执行后应检查结果，避免反复点击。
+管理页默认展示连接概览、下一步建议与已连接设备。需要时再展开“网络设置”“连接诊断与互联网检查”“设备详情、资源与事件”或“连接维护”。基础上游参数放在一起，本地 AP、DNS 与管理密码归入设置内的折叠项。连接维护可以重连上游 Wi-Fi、关闭现有代理连接或重启设备。这些操作可能中断正在进行的下载和视频播放，执行后应检查结果，避免反复点击。
 
 | 颜色 | 含义 | 下一步 |
 | --- | --- | --- |
@@ -424,14 +228,10 @@ flowchart TD
 
 建议从近到远检查：**终端 → ESP32 AP → 上游 Wi-Fi → SOCKS5 → DNS / 目标网站**。先把一台终端跑通，再增加第二台。
 
+SDK、补丁、工具下载和编译错误集中在[构建排错](docs/build-and-flash.zh-CN.md#常见构建问题)。
+
 | 现象 | 优先检查 |
 | --- | --- |
-| `idf.py` 找不到 | 当前终端是否已执行 ESP-IDF 激活脚本；激活后再进入项目目录 |
-| Python / CMake / Ninja 版本或路径错误 | 检查 Python ≥ 3.10、CMake ≥ 3.22，并使用对应 SDK 的终端；不要混用 Windows 与 WSL 工具链 |
-| lwIP 提示 revision / hash 不匹配 | 检查两个固定提交及子模块是否完整。单纯 LF/CRLF 差异已兼容；在 SDK 的 lwIP 仓库中用 `git diff` 检查实际修改，或备份项目副本后再重新生成，不要强行打补丁 |
-| 构建仍引用旧 SDK 或全局 lwIP | 确认正确环境并运行 `idf.py reconfigure`；缓存仍不一致时，在项目内 `idf.py fullclean` 后重新构建 |
-| 编译无法下载组件 | 查看第一个下载错误，检查网络是否能访问 GitHub、乐鑫下载站和组件注册表；不要关闭 TLS / 哈希校验 |
-| 找不到串口或无法烧录 | 数据线、板上 USB 接口、驱动、串口权限；WSL 中确认 USB 是否已转发；关闭其他占用串口的程序 |
 | 启动报告 PSRAM 错误 | 板子是否确实是 N16R8 / Octal PSRAM 配置，供电是否稳定 |
 | 手机提示 Wi-Fi 没有互联网 | 首次配置时可保持连接；之后检查 STA 和代理。排查时防止手机自动改走移动数据 |
 | 管理页打不开 | 是否连接 ESP32 AP、是否使用 `http://`，地址是否因 X 改动；重新获取 DHCP 地址 |
@@ -471,127 +271,20 @@ flowchart TD
 
 Web 页的“恢复默认配置”同样保留管理口令，但需要重启后进行 180 秒确认；串口 `reset-network` 使用上述 30 秒确认码执行恢复。**RST/EN 和断电只会重启，不清除已保存的密码或网络；BOOT 按钮未用作恢复菜单。** 日常恢复不需要擦除整块 Flash。
 
-Linux/WSL2 可在项目根目录通过同一连接记录日志，并按行发送命令：
-
-```bash
-python tools/uart_capture.py --port /dev/ttyACM0 --no-reset --interactive --timestamps --seconds 0
-```
-
-工具的 `--interactive` 标准输入处理仅支持 POSIX，按 Enter 后才发送整行。Windows 输入命令请用 `idf.py -p COM5 monitor` 或串口终端；仅记录日志时可用 `--port COM5`，不加 `--interactive`。带时间戳的采集也会立即显示提示符和回显，无需等待换行。先退出其他串口工具。`--seconds 0` 表示持续读取到中断；`--no-reset` 避免工具主动复位，但 USB 适配器或系统驱动仍可能影响复位信号。
+日志保存和 POSIX 行输入的使用方法见[串口工具说明](tools/README.md)。
 
 ## 继续开发与运行测试
 
-### 理解最基本的实现
+应用使用 ESP-IDF 的驱动/服务、FreeRTOS 任务和 lwIP TCP/IP 协议栈。项目本地的 lwIP 补丁截获终端数据包、记录原始目标并恢复回复地址；TCP 通过 SOCKS5 `CONNECT`，UDP 通过 `UDP ASSOCIATE` 转发，不修改全局 SDK。
 
-`main/` 定义网关行为，使用 ESP-IDF 提供的 Wi-Fi、`esp_netif`、socket、HTTP 和 NVS API。**FreeRTOS 是 ESP-IDF 内置的调度系统**，负责 TCP/UDP、维护等任务及队列/锁；**lwIP 是其 TCP/IP 协议栈**，负责 IPv4、TCP 握手、重传等。应用决定如何转发，SDK 提供驱动与服务，FreeRTOS 调度执行，lwIP 处理网络协议；这些底层库不需要用户另装操作系统。
+[实现原理与开发指南](docs/development.zh-CN.md)保留数据路径、模块/源码对应表、回归命令和工具速览。[编译与刷写](docs/build-and-flash.zh-CN.md)说明精确依赖及 lwIP 的 `apply` / `check` / `restore` 流程。
 
-可以把 ESP32 看作接收和转交数据的中间人：
+- [文档索引](docs/README.md)：当前指南和历史记录入口。
+- [维护与恢复](docs/maintenance.md)：配置试运行及恢复边界。
+- [性能与验证](docs/performance.md)：历史测量数据与测试限制。
+- [工具使用说明](tools/README.md)：串口采集、网络探测、测速与打包。
 
-- **TCP** 常用于网页等需要可靠传输的连接。网关记住终端原本想连接的目标，再通过 SOCKS5 的 `CONNECT` 请求让代理连接它，最后把响应送回终端。
-- **UDP** 常用于普通 DNS 查询和部分实时通信。网关通过 `UDP ASSOCIATE` 获取中继信息，再携带目标地址转发数据。不同通信保留各自的转发状态。
-- **DNS** 把域名转换成 IP 地址。默认 DHCP 告诉终端使用 `1.1.1.1`；ESP32 没有本地 DNS 服务，普通 DNS UDP 请求也经 SOCKS5 转发。
-- **NVS** 是 Flash 中保存配置的区域。因此设置通常能跨重启保留，重新烧录应用也不会自动覆盖已有的网络参数。
-
-当前总容量为 64 个活动 TCP 转发连接、32 个 UDP flow；512 条目标/结束阶段映射另受前述单终端上限约束，**不表示可以同时转发 512 个 TCP 连接**。lwIP 负责 TCP 重传等底层工作，应用使用固定循环处理多条连接。
-
-### 从一条网页连接看 TCP 转发
-
-**为什么修改 `ip4.c`？** 手机的外部网站请求原本并不是发给 ESP32 本地地址，普通应用 socket 不能直接接收这些 TCP 连接。当前补丁在 IPv4 校验后、本地地址判断前接入输入钩子，让应用记录目标并改写；在 IPv4 输出头准备好、交给网络接口前接入输出钩子，恢复远端地址。改写使用独立的数据包副本，避免损坏 lwIP 保留用于重传的数据。仅建立一个 SOCKS5 socket，无法完成本项目所需的透明截获与地址恢复；也无需让应用重写整套 TCP 协议。参考 [ESP-IDF 的 lwIP 说明](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/api-guides/lwip.html)。
-
-假设手机想连接网站的 `203.0.113.10:443`，这里的地址只是说明用的示例：
-
-1. 手机将数据包发给它的默认网关，也就是 ESP32。
-2. 项目内的 lwIP 补丁在 IPv4 处理路径调用网关代码。代码检查数据包，记录手机和原始目标，将 TCP 数据包改写为送给 ESP32 本地监听端口，并更新校验和，让接收方能正确验证数据包。
-3. lwIP 处理这段本地 TCP 连接，网关应用通过 socket 读取数据。socket 可以理解为程序收发网络数据的接口；应用无需自行实现 TCP 握手或重传。
-4. TCP 转发循环与上游协商 SOCKS5 NO AUTH，再发送 `CONNECT`，请求代理连接原始目标。之后在两段连接之间转交数据。
-5. 回到手机的 TCP 数据包会按映射恢复为原始远端地址，并修正校验和。因此手机仍认为自己在与网站通信。
-
-```mermaid
-flowchart LR
-    Client["手机的 TCP 数据包"] --> Hook["IPv4 钩子<br/>记录目标并改写地址"]
-    Hook --> Stack["lwIP 本地连接"]
-    Stack --> Relay["TCP 转发循环"]
-    Relay -->|SOCKS5 CONNECT| Proxy["上游代理"]
-    Proxy --> Site["原始网站"]
-```
-
-这里“透明”描述的是终端的使用方式，不代表把原始 TCP 数据包直接塞进 SOCKS5。网关先交给 lwIP 处理，再转发连接中的数据；HTTPS 加密仍由浏览器和网站处理，网关不解密网页内容。
-
-### UDP、并发与配置保存怎么处理
-
-UDP 没有 TCP 那样的连接过程，但 SOCKS5 的 UDP 转发仍需要一条 TCP 控制连接。每个 UDP flow 保存客户端和目标信息，协商 `UDP ASSOCIATE`，再将带有 SOCKS5 目标头的 UDP 数据交给中继。回复会核对流和客户端归属后送回对应终端。代码还为 DNS 保留部分容量和协商机会，减少其他 UDP 通信占满资源时无法解析域名的情况。
-
-TCP 和 UDP 分别使用固定的转发循环，检查哪些连接现在能收发，处理一段数据后继续照顾其他连接，不为每条连接创建任务。队列容量和等待时间有上限；较大的 TCP 数据缓冲放在 PSRAM，频繁访问的 TCP 状态保留在内部 RAM。这样控制内存占用，但不会突破无线带宽和活动连接总上限。
-
-配置管理保存当前值与上一份值。新网络配置先试运行，确认后保留；超时恢复旧值。管理和维护任务与转发循环分开，因此查看状态无需为每个网页请求重新启动代理。两台终端各有连接身份和流量计数，用于识别回复归属，并清理已离开终端的连接。
-
-终端必须通过 ESP32 的 DHCP 获取 IPv4 地址：手动设置静态 IP 不会登记到转发客户端列表。连接身份用于防止重连后的旧回复误投，不是防 IP 伪造的认证。流量统计按成功中继的 TCP/UDP **有效载荷字节**累计，不含协议头；不是无线链路总字节数，也不代表应用已收到数据。
-
-管理服务器将每个请求的网络接收/发送期限限制为 **5 秒**，请求体最多 1024 字节。拒绝请求或未读完正文时关闭连接，不会继续排空任意长度的数据，以限制网络阻塞对同一 HTTP 任务中配置回滚的影响。状态刷新会保留尚未保存的 Internet 检查选项，事件名称随页面语言显示。
-
-想阅读源码时，可按下面的顺序寻找对应实现：
-
-| 要了解的部分 | 主要源码 |
-| --- | --- |
-| 启动、AP/STA 与网络事件 | [app_main.c](main/app_main.c) |
-| TCP 入口、地址改写与目标记录 | [tcp_poc.c](main/tcp_poc.c)、[packet_rewrite.c](main/packet_rewrite.c)、[flow_table.c](main/flow_table.c) |
-| TCP 的 SOCKS5 协商和双向转发 | [socks_relay.c](main/socks_relay.c) |
-| UDP 接入、关联和数据格式 | [udp_gateway.c](main/udp_gateway.c)、[udp_relay.c](main/udp_relay.c)、[socks_udp.c](main/socks_udp.c) |
-| 终端归属和计数 | [ap_clients.c](main/ap_clients.c) |
-| 配置保存、确认与回滚 | [gateway_settings.c](main/gateway_settings.c)、[web_management.c](main/web_management.c) |
-| HTTP 传输期限与连接清理 | [management_http.c](main/management_http.c) |
-| 维护任务和连接检查 | [gateway_control.c](main/gateway_control.c)、[gateway_probe.c](main/gateway_probe.c) |
-
-更完整的数据路径和模块职责见 [架构说明](docs/architecture.md)。初次使用只需先掌握配置步骤，再按兴趣阅读实现。
-
-### 运行现有回归测试
-
-测试在开发电脑上编译并执行部分 C 逻辑，因此称为“宿主测试”，无需连接 ESP32 板。先成功构建一次固件，确保锁定的 cJSON 已下载到 `managed_components/`。
-
-在 Linux、已激活 ESP-IDF 的项目终端中，准备系统 GCC/binutils 和 Node.js，再运行：
-
-```bash
-# 先记住当前 Python，避免调整 PATH 后切换到另一套解释器。
-HOST_PYTHON="$(command -v python)"
-PATH=/usr/bin:/bin:$PATH "$HOST_PYTHON" -m unittest discover -s tests -v
-node tests/management_feedback_harness.js
-node tests/management_transport_harness.js
-```
-
-ESP-IDF 的 Python 环境包含 pyserial/esptool，串口相关测试会用到它们。当前有 **87 项固件/工具宿主回归与 19 项 lwIP 准备脚本回归**，另有两组前端反馈 / 兼容测试。准备脚本测试使用独立的临时 Git 仓库，覆盖 LF/CRLF、重复操作、只读检查及拒绝意外修改。HTTP 期限测试使用真实宿主 socket；串口回显/提示符测试使用伪终端和模拟 UART 驱动。请检查实际执行数量、失败和跳过情况；测试通过并不代替真实 Wi-Fi、掉电或长时间稳定性测试。
-
-### tools 工具速览
-
-在项目根目录运行。固件构建只要求 lwIP 准备工具，其余用于可选的排查和开发测试。完整命令、平台限制和测试前提见 [工具使用说明（英文）](tools/README.md)。
-
-| 工具 | 用途 |
-| --- | --- |
-| `prepare_lwip.py` | `apply` 准备副本，`check` 校验，`restore` 还原本地补丁 |
-| `uart_capture.py` | 保存串口日志；Linux/WSL2 可用 `--interactive` 发送命令 |
-| `probe_upstream_udp.py`、`probe_upstream_quic.py` | 从电脑直接测试 SOCKS UDP/DNS 或 QUIC，不经过 ESP32 |
-| `test_stream_server.py`、`throughput_bench.html` | 在局域网电脑运行测试服务/页面，由 AP 终端测速 |
-| `test_transparent_echo.py`、`test-transparent-echo.ps1` | 用专门的 echo 目标测试透明 TCP；普通 HTTPS 网站不是 echo 服务 |
-| `collect_link_bench.py`、`snapshot_manifest.py` | 提取支持的诊断串口报告；创建/核对本地文件清单 |
-
-### 项目目录与进一步阅读
-
-| 路径 | 内容 |
-| --- | --- |
-| `main/` | 固件源码和嵌入的管理页面 |
-| `patches/` | lwIP 补丁及版本 / 哈希信息 |
-| `tools/` | 补丁准备、串口采集、网络探测和测速工具 |
-| `tests/` | C/Python 宿主测试和 JavaScript 前端测试 |
-| `examples/` | Xray 完整客户端示例、字段位置说明及配置片段 |
-| `sdkconfig.defaults` | 初次配置的默认硬件和功能参数 |
-| `dependencies.lock` | 固件组件版本记录 |
-| `docs/` | 架构、维护、性能和开发记录 |
-
-- [文档索引](docs/README.md)
-- [维护与恢复](docs/maintenance.md)
-- [性能与验证](docs/performance.md)：完整的测量记录、内存采样和验证边界。
-- [开发历史](docs/history/README.md)：包含尝试过又撤回的实验，适合研究过程；日常使用优先参考本 README 和 `docs/` 顶层说明。
-
-`sdkconfig`、`build/`、`managed_components/`、生成的 lwIP 副本和测试输出由工具生成。提交代码前检查 `git status`，不要把 Wi-Fi 密码、个人配置、日志或本地固件文件上传到仓库。
+生成的构建文件、日志、个人配置和固件包可能含敏感信息。分享前检查 `git status` 和文件内容。
 
 ## 功能边界与安全说明
 
@@ -600,3 +293,7 @@ ESP-IDF 的 Python 环境包含 pyserial/esptool，串口相关测试会用到�
 两台终端共享同一个 2.4 GHz 无线电和总体转发容量，接入数量限制不会保证带宽均分。它不适合代替需要大量用户、高吞吐或完整路由功能的设备。PSRAM 提供额外内存，但 Wi-Fi 和 lwIP 仍受内部 RAM 限制；长期稳定性、写 Flash 时断电和真实上游中断仍需进一步验证。
 
 管理接口仅开放在 AP 上，但使用 HTTP；管理口令和网络配置未加密存储在 NVS。串口恢复依赖物理访问，没有登录认证；当前未启用安全启动和 Flash 加密。请在可信网络和终端上完成首次设置，使用自己的密码，不要将管理页面或无认证代理暴露到公网。
+
+## 许可证与上游声明
+
+本项目原创代码采用 [MIT 许可证](LICENSE)。第三方代码和改编示例保留各自许可证与版权声明，详见[第三方声明](THIRD_PARTY_NOTICES.md)。固件包包含适用的许可文本；MIT 不替代上游许可证。

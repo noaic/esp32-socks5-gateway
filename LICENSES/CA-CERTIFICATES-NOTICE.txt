@@ -1,0 +1,34 @@
+Mozilla CA certificate data
+
+##
+## Bundle of CA Root Certificates
+##
+## Certificate data from Mozilla last updated on: Wed Feb 11 18:26:30 2026 GMT
+##
+## Find updated versions here: https://curl.se/docs/caextract.html
+##
+## This is a bundle of X.509 certificates of public Certificate Authorities
+## (CA). These were automatically extracted from Mozilla's root certificates
+## file (certdata.txt).  This file can be found in the mozilla source tree:
+## https://raw.githubusercontent.com/mozilla-firefox/firefox/refs/heads/release/security/nss/lib/ckfw/builtins/certdata.txt
+##
+## It contains the certificates in PEM format and therefore
+## can be directly used with curl / libcurl / php_curl, or with
+## an Apache+mod_ssl webserver for SSL client authentication.
+## Just configure this file as the SSLCACertificateFile.
+##
+## Conversion done with mk-ca-bundle.pl version 1.32.
+## SHA256: 3b98d4e3ff57a326d9587c33633039c8c3a9cf0b55f7ca581d7598ff329eb1f3
+##
+
+The CA certificate store is distributed under MPL-2.0, as documented at
+https://curl.se/docs/caextract.html (CA certificate store license).
+
+The default firmware embeds the ESP-IDF-generated certificate bundle.
+The corresponding source certificate data and conversion scripts are at:
+https://github.com/espressif/esp-idf/tree/fff9895c82d744c7237be8847347bdd1b07c6643/components/mbedtls/esp_crt_bundle
+https://github.com/espressif/esp-idf/blob/fff9895c82d744c7237be8847347bdd1b07c6643/components/mbedtls/esp_crt_bundle/cacrt_all.pem
+
+The MPL-2.0 license is reproduced in MPL-2.0.txt. The certificate data
+retains its applicable upstream terms; this does not apply the MPL to
+independently authored ESP32 application files.

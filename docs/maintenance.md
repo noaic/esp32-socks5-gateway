@@ -1,6 +1,6 @@
 # Maintenance and recovery
 
-Set the management password through the AP-local first-use page. Configuration reads do not return Wi-Fi or management passwords. Ordinary reset or application flashing preserves NVS. Saved network/password changes require confirmation within 180 seconds after restarting; otherwise they roll back. After a subnet change, a phone may retain its old DHCP lease until reconnecting.
+Set the management password through the AP-local first-use page. Configuration reads do not return Wi-Fi or management passwords. Ordinary reset or application-only flashing normally preserves NVS; writing the merged precompiled `factory.bin` clears it because the image covers the NVS address range. Saved network/password changes require confirmation within 180 seconds after restarting; otherwise they roll back. After a subnet change, a phone may retain its old DHCP lease until reconnecting.
 
 ## Networks and status
 
