@@ -39,6 +39,8 @@ The packager checks pinned SDK/override provenance, hardware settings, public co
 
 It excludes private NVS contents, `sdkconfig`, ELF files and the source checkout. Dirty source builds are identified in provenance. Packaging does not upload or publish a release. See the [precompiled guide](../docs/flash-prebuilt.md) for ordinary official-tool flashing, native checksum checks and serial monitoring.
 
+Official Releases use `vYY.MM.DD` tags and upload only two verified copies: `factory.bin` becomes `esp32-socks5-gateway-vYY.MM.DD-esp32s3-n16r8-factory.bin`; `app.bin` becomes the matching `-sysupgrade.bin`. This remains a raw application image for serial flashing at `0x10000`, not an OTA implementation. Keep the full package for developer/CI checks. Put hashes in release notes and link notices in source archives instead of uploading the helper files.
+
 ### Optional repository flashing helper
 
 For developers who want additional package/layout checks, `tools/flash_firmware.py` remains in the source checkout. From the project root, check a generated directory without touching hardware:

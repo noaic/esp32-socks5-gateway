@@ -135,11 +135,11 @@ You can flash a precompiled BIN **without installing ESP-IDF or running a projec
 
 | Goal | Guide |
 | --- | --- |
-| First installation / reset | Write the complete `factory.bin` at `0x0`; **resets saved settings**. [Windows 11 / Linux guide](docs/flash-prebuilt.md) includes official CLI and Windows GUI steps |
-| Compatible application update | Write `app.bin` at `0x10000`; normally retains settings. Existing bootloader, partitions and settings must be compatible |
+| First installation / reset | Write the complete `*-factory.bin` at `0x0`; **resets saved settings**. [Windows 11 / Linux guide](docs/flash-prebuilt.md) includes official CLI and Windows GUI steps |
+| Compatible application update | Write `*-sysupgrade.bin` at `0x10000`; normally retains settings. Existing bootloader, partitions and settings must be compatible |
 | Build your own firmware | [Windows 11 / Linux / WSL2 build and flash](docs/build-and-flash.md): exact SDK commits, lwIP override, configuration, build, partitions, and troubleshooting |
 
-Use BIN files and their checksums/notices from a trusted [project release](https://github.com/noaic/esp32-socks5-gateway/releases) or successful firmware build artifact. The optional `firmware.zip` collects these files without host scripts. If no files are available, build from source. Default images use the AP credentials below and contain no upstream Wi-Fi credentials. **ESP32-S3 N16R8 is required**.
+Formal [project releases](https://github.com/noaic/esp32-socks5-gateway/releases) use `vYY.MM.DD` and provide only versioned `*-factory.bin` and `*-sysupgrade.bin` files. Checksums appear on the release page; notices are included in its source archives. Actions retain a fuller developer verification package. If no release is available, build from source. Default images use the AP credentials below and contain no upstream Wi-Fi credentials. **ESP32-S3 N16R8 is required**.
 
 The source-build guide preserves the complete setup commands. An arbitrary newer ESP-IDF is not interchangeable: the `ip4.c` patch and dependency pins must match.
 
@@ -147,7 +147,7 @@ The source-build guide preserves the complete setup commands. An arbitrary newer
 
 ### 1. Write the firmware to the board
 
-Use the [precompiled-firmware guide](docs/flash-prebuilt.md) or the [source-build guide](docs/build-and-flash.md). Both explain ports, Linux permissions and WSL2 USB mapping. **`factory.bin` overwrites NVS settings, even without a full-Flash erase.** Compatible app-only or separate-image updates normally preserve NVS. Do not erase all Flash routinely.
+Use the [precompiled-firmware guide](docs/flash-prebuilt.md) or the [source-build guide](docs/build-and-flash.md). Both explain ports, Linux permissions and WSL2 USB mapping. **`*-factory.bin` overwrites NVS settings, even without a full-Flash erase.** Compatible app-only or separate-image updates normally preserve NVS. Do not erase all Flash routinely.
 
 The console runs at **115200 baud on UART0**. Use the board's UART / USB-UART connector for logs and commands; a native USB connector that can flash may not carry UART logs. Close other serial tools before flashing.
 

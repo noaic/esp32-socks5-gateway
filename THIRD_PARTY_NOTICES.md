@@ -89,7 +89,9 @@ When distributing firmware, including standalone BIN downloads, accompany it
 with `LICENSE`, this file and the `LICENSES/` directory (also included in the
 script-free firmware ZIP). When distributing source, also retain copyright,
 license and modification notices in the original files and preserve the
-example's attribution. The packaging tool includes the notice bundle.
+example's attribution. The packaging tool includes the notice bundle. Official binary-only Releases
+also provide this notice bundle in GitHub's generated source archives; their
+release notes link to the notices at the matching tag.
 
 This inventory was checked against the pinned local SDK, managed-component
 versions and default firmware link map. It is not a historical, line-by-line

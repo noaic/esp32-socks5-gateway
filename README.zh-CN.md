@@ -135,11 +135,11 @@ LED 引脚不同需要匹配配置。当前启动检查要求双核、恰好 16 
 
 | 目的 | 对应指南 |
 | --- | --- |
-| 首次安装 / 重置 | 完整 `factory.bin` 写入 `0x0`，**会重置已保存的配置**。[Windows 11 / Linux 指南](docs/flash-prebuilt.zh-CN.md)包含官方命令行与 Windows 图形操作 |
-| 兼容的应用更新 | `app.bin` 写入 `0x10000`，通常保留配置；要求板上 Bootloader、分区和配置版本兼容 |
+| 首次安装 / 重置 | 完整 `*-factory.bin` 写入 `0x0`，**会重置已保存的配置**。[Windows 11 / Linux 指南](docs/flash-prebuilt.zh-CN.md)包含官方命令行与 Windows 图形操作 |
+| 兼容的应用更新 | `*-sysupgrade.bin` 写入 `0x10000`，通常保留配置；要求板上 Bootloader、分区和配置版本兼容 |
 | 自行编译固件 | [Windows 11 / Linux / WSL2 编译与刷写](docs/build-and-flash.zh-CN.md)：精确 SDK 提交、lwIP Override、配置、编译、分区及构建排错 |
 
-从可信的[项目发布页](https://github.com/noaic/esp32-socks5-gateway/releases)或成功的固件构建产物下载 BIN、校验值和版权说明。可选的 `firmware.zip` 将这些文件打包，里面不含主机端脚本。如果暂时没有产物，则按源码指南编译。默认镜像使用下文的 AP 信息，不预置上游 Wi-Fi 口令。**当前要求 ESP32-S3 N16R8**。
+正式[项目 Release](https://github.com/noaic/esp32-socks5-gateway/releases)使用 `vYY.MM.DD`，仅提供带版本的 `*-factory.bin` 和 `*-sysupgrade.bin`。校验值见发布页，版权材料保存在其源码压缩包中；Actions 仍保留完整开发验证包。尚无 Release 时可从源码构建。默认镜像使用下文的 AP 信息，不预置上游 Wi-Fi 口令。**当前要求 ESP32-S3 N16R8**。
 
 源码指南保留完整环境命令。不能任意换成更新的 ESP-IDF：`ip4.c` 补丁和依赖固定版本必须匹配。
 
@@ -147,7 +147,7 @@ LED 引脚不同需要匹配配置。当前启动检查要求双核、恰好 16 
 
 ### 1. 将固件写入开发板
 
-按[预编译固件指南](docs/flash-prebuilt.zh-CN.md)或[源码构建指南](docs/build-and-flash.zh-CN.md)操作；两者说明了串口识别、Linux 权限和 WSL2 USB 映射。**`factory.bin` 即使不执行全 Flash 擦除，也会覆盖 NVS 配置。**兼容的应用更新或分段刷写通常保留 NVS，不要把全 Flash 擦除当作日常更新步骤。
+按[预编译固件指南](docs/flash-prebuilt.zh-CN.md)或[源码构建指南](docs/build-and-flash.zh-CN.md)操作；两者说明了串口识别、Linux 权限和 WSL2 USB 映射。**`*-factory.bin` 即使不执行全 Flash 擦除，也会覆盖 NVS 配置。**兼容的应用更新或分段刷写通常保留 NVS，不要把全 Flash 擦除当作日常更新步骤。
 
 控制台使用 **UART0、115200 波特率**。查看日志和输入命令优先使用开发板的 UART / USB-UART 接口；能通过原生 USB 刷写，不代表该接口能显示 UART 日志。刷写前退出其他串口程序。
 
