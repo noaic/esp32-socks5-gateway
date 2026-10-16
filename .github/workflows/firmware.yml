@@ -13,8 +13,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
-      IDF_PATH: ${{ runner.temp }}/esp-idf
-      IDF_TOOLS_PATH: ${{ runner.temp }}/idf-tools
       IDF_COMMIT: fff9895c82d744c7237be8847347bdd1b07c6643
       IDF_PY_BUILD_JOBS: 4
     steps:
@@ -25,6 +23,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - name: Configure SDK paths
+        run: |
+          echo "IDF_PATH=$RUNNER_TEMP/esp-idf" >> "$GITHUB_ENV"
+          echo "IDF_TOOLS_PATH=$RUNNER_TEMP/idf-tools" >> "$GITHUB_ENV"
       - name: Install host dependencies
         run: |
           sudo apt-get update
