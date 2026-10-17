@@ -50,8 +50,8 @@ typedef struct {
     void (*count)(void *context, udp_diag_t counter, unsigned amount);
     void (*stats)(void *context, const udp_relay_stats_t *stats);
     void (*association_error)(void *context,int code); /* Optional bounded health observer. */
-    /* Optional adapter maintenance; returns microseconds until next deadline.
-     * The worker uses this to retry local output without another task/timer. */
+    /* Host experiment adapter only; NULL in the firmware callbacks.
+     * Returns microseconds until the experimental output-retry deadline. */
     int64_t (*maintain)(void *context);
     bool (*stop)(void *context); /* NULL in firmware; bounded host harness. */
     /* Optional per-client lifecycle. Called only by the single worker. */

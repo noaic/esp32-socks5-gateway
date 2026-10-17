@@ -70,7 +70,7 @@ Tests used Android clients and a LAN test service, reporting the median of three
 | UDP flows | 32 | Forwarding state for separate traffic flows, shared by both clients |
 | TCP mapping records | 512 | Also retain closing-state information; not 512 active connections |
 
-Each client slot can retain at most **256 TCP mappings**, including records from earlier connections of that slot, and **16 initial mappings awaiting acceptance by the TCP listener**. These limits apply even with one client, protecting the other slot from a burst of new connections. Closing mappings remain reserved for at least **120 seconds (2×MSL)**; a rapid series of short connections can reach these limits before reaching 64 active relays. They do not guarantee equal bandwidth.
+A burst of short connections can exhaust mapping space before all 64 relays are active. Idle TCP connections also expire; see [connection limits](docs/performance.md#connection-limits) when evaluating applications that keep connections open. Client limits do not guarantee equal bandwidth.
 
 TCP upstream connection/negotiation has a **15-second** deadline. Idle relays expire after **120 seconds**; when capacity is full, a relay idle for at least **30 seconds** with empty queues can be reclaimed. UDP payloads are limited to **1462 bytes per datagram**. Consider these limits when evaluating long-idle applications, connection bursts, or large UDP messages.
 
@@ -96,7 +96,7 @@ A different LED pin requires matching configuration. The current startup check r
 
 | Purpose | What you need |
 | --- | --- |
-| Flash a precompiled BIN | Official esptool 5.5.0 (Python ≥ 3.10), or Espressif's Windows graphical tool; a serial driver when needed. **No ESP-IDF or project script required**. See [firmware flashing](docs/flash-prebuilt.md) |
+| Flash a precompiled BIN | Official esptool 5.x (5.5.0 recommended; Python ≥ 3.10), or Espressif's Windows graphical tool; a serial driver when needed. **No ESP-IDF or project script required**. See [firmware flashing](docs/flash-prebuilt.md) |
 | Build firmware yourself | Git, Python, pinned ESP-IDF/toolchain and managed components; follow the complete [build guide](docs/build-and-flash.md) |
 | Use the gateway | Browser, an existing 2.4 GHz Wi-Fi network, and the SOCKS5 service described below |
 
@@ -113,6 +113,8 @@ Check that the proxy is reachable **from the ESP32's network**. A proxy working 
 | UDP ASSOCIATE support | Ordinary DNS queries and other UDP traffic depend on it; working TCP alone does not verify the whole gateway |
 | An address reachable from the LAN | A service bound only to `127.0.0.1` cannot be reached by other devices; enable LAN access using your proxy software's instructions |
 | Appropriate firewall access | Allow the TCP control connection and the UDP relay address/port returned by the server; the UDP port may differ from the SOCKS5 listening port |
+
+The UDP relay reply must contain a reachable **IPv4** address; `0.0.0.0` uses the configured proxy address. Domain-name and IPv6 UDP relay replies are unsupported.
 
 Example network settings:
 
@@ -155,6 +157,8 @@ The console runs at **115200 baud on UART0**. Use the board's UART / USB-UART co
 
 Connect your phone or computer to `ESP32-Transparent-Proxy`, using the AP password from your firmware package or your source-build configuration. The unchanged development default is `esp32proxy`; replace it before normal use.
 
+Use **automatic IPv4/DHCP** on the client. Manually assigned static IPs are not registered for forwarding, even if the local management page opens.
+
 Without upstream settings, a phone may say this Wi-Fi has no Internet access. Choose to stay connected so you can open the local management page. During the first test, temporarily disabling mobile data or automatic network switching helps confirm that traffic is actually going through the ESP32.
 
 ### 3. Set the management password
@@ -187,7 +191,9 @@ Open “Network settings” and enter (English interface labels are used below):
 | DNS IPv4 advertised by DHCP | DNS server for clients, such as `1.1.1.1` |
 | AP subnet third octet X | Third part of the AP address: default 4 gives `192.168.4.1` |
 
-**An empty password field preserves the existing password.** It does not clear it. For an upstream Wi-Fi network without a password, select “Upstream Wi-Fi has no password”. SSID/password lengths use UTF-8 bytes; non-ASCII characters can take multiple bytes.
+**An empty password field preserves the existing password.** It does not clear it. For an upstream Wi-Fi network without a password, select “Upstream Wi-Fi has no password”.
+
+SSID and password limits use UTF-8 **bytes**, not character counts: SSID up to 32, AP password 8–63, and management password 12–64. A nonempty upstream password normally needs 8–63 bytes; a 64-byte value must be a hexadecimal PSK. ASCII passwords are easier to count.
 
 Upstream and AP networks must not overlap. For a typical `255.255.255.0` network, upstream `192.168.1.x` and AP `192.168.4.x` are separate. If upstream also uses `192.168.4.x`, you could change X to 10 and use `192.168.10.1` for management. The page detects conflicts using the actual network masks.
 
@@ -211,6 +217,8 @@ Before confirming, check that STA has an IPv4 address, run “Run connection dia
 ## Daily use and status LED
 
 The management page first shows the connection overview, next-step advice, and connected devices. Expand Network settings, Connection diagnostics and Internet check, Device details/resources/events, or Connection maintenance when needed. Basic upstream settings remain together; local AP, DNS, and management-password fields are grouped inside the settings section. You can reconnect upstream Wi-Fi, close existing proxy connections, or restart the board. These actions can interrupt downloads/video; check the result and avoid repeatedly submitting an action.
+
+If an immediate setting/action response is lost, the page keeps checking current status and does not automatically repeat the request. It lets you retry or confirm the network configuration; reaching the requested state does not prove which request caused it. Network saves, queued maintenance and restart operations still wait for their matching result.
 
 | Color | Meaning | Next step |
 | --- | --- | --- |
@@ -236,6 +244,7 @@ Build, SDK, patch, and tool-download problems are covered in [build troubleshoot
 | Phone reports no Internet | Stay connected during initial setup; afterward check STA and proxy. Prevent mobile-data switching while testing |
 | Management page does not open | Joined the ESP32 AP, explicit `http://`, current address after an X change, and a fresh DHCP lease |
 | Management login fails | Username is `admin`; management password is separate from the AP password; use the current password after changes |
+| Management works but all client Internet traffic fails | Set the client to automatic IPv4/DHCP, reconnect, then check STA and the proxy |
 | STA never becomes ready | SSID/password, 2.4 GHz availability, signal; empty SSID disables connection attempts |
 | Upstream TCP port check fails | SOCKS5 IP/port, LAN access, firewall; do not use `127.0.0.1` |
 | TCP port works but NO AUTH fails | An HTTP port was entered, or the proxy requires credentials |
@@ -250,13 +259,14 @@ Use serial recovery if you forget the management password or lose access after c
 
 Commands are in English. Enter them in ESP-IDF monitor or a serial terminal that can send text; press Enter after each command.
 
-The firmware displays `gateway> ` and echoes accepted ASCII characters as you type. Backspace/Delete removes the last character; Enter (LF, CR, or CRLF) submits once and displays the prompt again. Type only the command, without `gateway> `. Disable your terminal's **local echo** if characters appear twice. Input is limited to 95 bytes and one nonempty command per second; arrow-key editing/history is not supported. Live logs can interrupt the input line, so use `log warn` or `log off` when needed.
+The firmware displays `gateway> ` and echoes accepted ASCII characters as you type. Backspace/Delete removes the last character; Enter (LF, CR, or CRLF) submits once and displays the prompt again. Type only the command, without `gateway> `. Disable your terminal's **local echo** if characters appear twice. Input is limited to 95 bytes per line. State-changing and recovery commands are limited to one per second; `help`, `status`, `events`, and `log` without an argument can be read immediately, and `cancel` can cancel immediately. Arrow-key editing/history is not supported. Live logs can interrupt the input line, so use `log warn` or `log off` when needed.
 
 | Command | Purpose |
 | --- | --- |
 | `help` | Show help |
 | `status` | Current network/resource state |
 | `events` | Recent events |
+| `log` | Show the current logging level |
 | `log info` | Temporarily increase diagnostic logging |
 | `log warn` | Return to everyday WARN logging |
 | `log off` | Disable logging |
@@ -288,7 +298,7 @@ Generated build files, logs, personal configurations, and firmware packages can 
 
 ## Scope and security
 
-The gateway supports IPv4, SOCKS5 NO AUTH, TCP, and UDP forwarding. It does not support IPv6, HTTP upstream proxies, SOCKS5 account authentication, BLE, OTA, VLESS/REALITY, on-device GeoIP/GeoSite routing, or NTP. Transparent forwarding rejects IPv4 header options and IPv4 fragments; UDP payloads above 1462 bytes and fragmented SOCKS UDP packets (`FRAG != 0`) are dropped. IPv4 fragmentation and SOCKS fragmentation are separate restrictions. Broadcast, multicast, and special P2P behavior are outside scope, and complete QUIC compatibility has not been verified.
+The gateway supports IPv4, SOCKS5 NO AUTH, TCP, and UDP forwarding. It does not provide IPv6, HTTP upstream proxies, SOCKS5 account authentication, BLE, OTA, native VLESS/REALITY upstreams, or on-device GeoIP/GeoSite routing. It does not run its own SNTP client or NTP server; client NTP packets use the general UDP path, without dedicated NTP validation. Transparent forwarding rejects IPv4 header options and IPv4 fragments; UDP payloads above 1462 bytes and fragmented SOCKS UDP packets (`FRAG != 0`) are dropped. IPv4 fragmentation and SOCKS fragmentation are separate restrictions. Broadcast, multicast, and special P2P behavior are outside scope, and complete QUIC compatibility has not been verified.
 
 Two clients share one 2.4 GHz radio and total forwarding capacity. Client limits do not guarantee equal bandwidth. This project is unsuitable as a replacement for equipment requiring many users, high throughput, or full routing features. PSRAM adds memory, but Wi-Fi/lwIP still depend on limited internal RAM. Long-term stability, interrupted Flash writes, and real upstream outages need further validation.
 

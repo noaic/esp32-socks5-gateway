@@ -10,6 +10,10 @@ idf_component_register(SRCS "serial_recovery.c" "serial_commands.c" "serial_cons
 
 # Observe existing calls without patching ESP-IDF/esp-lwIP or replacing the
 # driver/netif function pointers. Reviewed against the pinned v6.1 source.
-foreach(symbol esp_netif_transmit_wrap esp_netif_receive esp_netif_free_rx_buffer esp_netif_netstack_buf_ref esp_netif_netstack_buf_free tcp_rexmit_rto_commit tcp_rexmit_fast memp_malloc memp_free)
+set(diagnostic_wrappers esp_netif_transmit_wrap tcp_rexmit_rto_commit tcp_rexmit_fast memp_malloc memp_free)
+if(CONFIG_PROXY_VERBOSE_DIAGNOSTICS)
+    list(APPEND diagnostic_wrappers esp_netif_receive esp_netif_free_rx_buffer esp_netif_netstack_buf_ref esp_netif_netstack_buf_free)
+endif()
+foreach(symbol IN LISTS diagnostic_wrappers)
     target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=${symbol}")
 endforeach()

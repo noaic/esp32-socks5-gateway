@@ -67,6 +67,8 @@ To explore the source, start with the matching modules:
 
 See [architecture](architecture.md) for the complete packet path and module responsibilities. For a first setup, learn the configuration steps first and explore the implementation when useful.
 
+Detailed CPU/runtime statistics, RX-buffer/reference hooks and Wi-Fi TX-completion observation are enabled only with `CONFIG_PROXY_VERBOSE_DIAGNOSTICS`; basic Web/error counters remain. The default source configuration leaves those detailed measurements off. An existing `sdkconfig` keeps its own settings, so inspect it before comparing builds. No new throughput improvement is claimed without a board benchmark.
+
 ## Run the existing regression tests
 
 “Host tests” compile and execute parts of the C implementation on your development computer; no ESP32 board is needed. Build the firmware successfully once first so the pinned cJSON source exists in `managed_components/`.
@@ -116,6 +118,7 @@ Run these from the project root. Only lwIP preparation is required for a firmwar
 | `patches/` | lwIP patch and revision/hash metadata |
 | `tools/` | Patch preparation, UART capture, network probes, and benchmarks |
 | `tests/` | C/Python host tests and JavaScript frontend tests |
+| `experiments/` | Retained buffer/delivery experiment modules used by host tests; not linked into firmware |
 | `examples/` | Complete Xray client example, field placement guide, and configuration fragments |
 | `sdkconfig.defaults` | Initial hardware and feature defaults |
 | `dependencies.lock` | Firmware component version record |

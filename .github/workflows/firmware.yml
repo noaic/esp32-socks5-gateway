@@ -13,20 +13,21 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
-      IDF_COMMIT: fff9895c82d744c7237be8847347bdd1b07c6643
       IDF_PY_BUILD_JOBS: 4
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - name: Configure SDK paths
         run: |
           echo "IDF_PATH=$RUNNER_TEMP/esp-idf" >> "$GITHUB_ENV"
           echo "IDF_TOOLS_PATH=$RUNNER_TEMP/idf-tools" >> "$GITHUB_ENV"
+          ci_idf_commit=$(python3 -c 'import json; print(json.load(open("patches/lwip-v6.1.json"))["idf_commit"])')
+          echo "IDF_COMMIT=$ci_idf_commit" >> "$GITHUB_ENV"
       - name: Install host dependencies
         run: |
           sudo apt-get update
@@ -71,7 +72,7 @@ jobs:
           python -m esptool --chip esp32s3 merge-bin --output "$RUNNER_TEMP/official-factory.bin" 0x0 build-release/bootloader/bootloader.bin 0x8000 build-release/partition_table/partition-table.bin 0x10000 build-release/esp32-socks5-gateway.bin
           cmp "$RUNNER_TEMP/official-factory.bin" dist/esp32-socks5-gateway-n16r8/factory.bin
       - name: Upload firmware artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: esp32-socks5-gateway-n16r8-${{ github.sha }}
           path: dist/esp32-socks5-gateway-n16r8/
@@ -82,8 +83,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - name: Install isolated browser test tools

@@ -149,13 +149,19 @@ If the `esptool` command is not on your PATH, use the virtual environment's Pyth
 
 ## Build a package as a maintainer
 
-From an activated ESP-IDF terminal in the project root, after the [source-build steps](build-and-flash.md):
+Prepare the SDK and lwIP first, then use the [isolated public-default build](build-and-flash.md#public-release-build). A personal build following the AP-password advice is intentionally rejected by the public packager; do not reset or overwrite that private configuration. From the activated project terminal:
 
 ```text
-python tools/package_firmware.py --build-dir build --output-dir dist/esp32-socks5-gateway-n16r8-local
+python tools/package_firmware.py --build-dir build-release --output-dir dist/gateway-validation
 ```
 
-This creates a full developer/CI verification package. For a formal Release, build a clean `vYY.MM.DD` tag and publish only verified `factory.bin` as `esp32-socks5-gateway-vYY.MM.DD-esp32s3-n16r8-factory.bin`, and `app.bin` as the matching `-sysupgrade.bin`. Keep the full package for checks, put hashes in release notes, and link notices in source archives. Do not distribute private credentials, device NVS dumps or logs. Packaging does not publish a Release; see [tool usage](../tools/README.md).
+This creates the complete developer/CI verification package. For a formal Release, build a **clean `vYY.MM.DD` tag** and add the optional export directory instead:
+
+```text
+python tools/package_firmware.py --build-dir build-release --output-dir dist/gateway-validation --release-dir dist/gateway-release
+```
+
+Both output directories must be new, different and outside one another. The second command already creates both outputs; do not run it against the directory created by the first example. The exporter derives the version from the compiled application, checks clean source/tag provenance, and writes exactly the versioned `-factory.bin` and `-sysupgrade.bin`. No manual filename/version override is needed. Keep the full package for verification, put hashes in English release notes, and link the matching source-archive notices. Do not distribute private credentials, device NVS dumps or logs. These commands do not publish anything; see [tool usage](../tools/README.md).
 
 ## Verification scope
 

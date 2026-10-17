@@ -67,6 +67,8 @@ TCP と UDP はそれぞれ固定の転送ループを使います。今送受�
 
 全体の経路と担当は [アーキテクチャ](architecture.md)を参照してください。初回は設定手順を理解し、必要になった部分から実装を読めば十分です。
 
+詳細な CPU/実行時間統計、RX バッファー参照追跡、Wi-Fi TX 完了の観測は `CONFIG_PROXY_VERBOSE_DIAGNOSTICS` でのみ有効にし、基本 Web/エラーカウンターは残します。既定ソース設定では細かな計測を無効にしますが、既存 `sdkconfig` は以前の選択を保持します。比較前に確認し、新たな実機測定なしに速度向上を主張しないでください。
+
 ## 既存の回帰テストを実行する
 
 「ホストテスト」は開発用パソコンで C コードの一部をコンパイルし、実行するテストです。ESP32 ボードは不要です。先にファームウェアを 1 回正常にビルドし、指定した cJSON が `managed_components/` に取得されていることを確認してください。
@@ -116,6 +118,7 @@ NODE_PATH="$BROWSER_TEST_TOOLS/node_modules" PLAYWRIGHT_BROWSERS_PATH="$BROWSER_
 | `patches/` | lwIP パッチとリビジョン / ハッシュ情報 |
 | `tools/` | パッチ準備、UART 記録、ネットワーク調査、速度測定 |
 | `tests/` | C/Python ホストテストと JavaScript フロントエンドテスト |
+| `experiments/` | ホストテストで使う、保管したバッファー/返信実験モジュール。ファームウェアにはリンクしません |
 | `examples/` | Xray の完全なクライアント設定例、配置ガイド、部分設定 |
 | `sdkconfig.defaults` | ハードウェア / 機能の初期設定 |
 | `dependencies.lock` | ファームウェア部品のバージョン記録 |

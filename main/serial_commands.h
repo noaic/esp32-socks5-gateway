@@ -16,7 +16,8 @@ typedef struct {
     void (*write)(const char *text,size_t length,void *context);
     void (*prompt)(void *context);
 } serial_terminal_t;
-/* Bounded ASCII lines, one command per second. No heap or terminal escape handling. */
+/* Bounded ASCII lines; changes are limited to one per second. Reads/cancel are immediate.
+ * No heap or terminal escape handling. */
 void serial_commands_feed(serial_parser_t *parser,const uint8_t *bytes,size_t length,
                           uint64_t now,serial_dispatch_t dispatch,void *context);
 void serial_commands_feed_terminal(serial_parser_t *parser,const uint8_t *bytes,size_t length,

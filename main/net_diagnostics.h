@@ -5,7 +5,8 @@
 
 /* Bind before Wi-Fi starts; handles live for the lifetime of the application. */
 void net_diagnostics_init(esp_netif_t *ap,esp_netif_t *sta);
-/* Install the pinned v6.1 TX completion observer after esp_wifi_start(). */
+/* With verbose diagnostics, install the pinned v6.1 TX completion observer
+ * after esp_wifi_start(). Otherwise this is a successful no-op. */
 esp_err_t net_diagnostics_start_wifi(void);
 void net_diagnostics_log(void);
 uint32_t net_diagnostics_ap_udp_attempts(void);

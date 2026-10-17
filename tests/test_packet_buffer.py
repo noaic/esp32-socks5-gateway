@@ -1,4 +1,4 @@
-"""Exercise production input ownership with lwIP-compatible pbuf type flags."""
+"""Exercise the inactive packet-buffer experiment, not the firmware input path."""
 from pathlib import Path
 import subprocess
 import tempfile
@@ -77,7 +77,7 @@ int main(void) {
 '''
 
 
-class BufferTests(unittest.TestCase):
+class ExperimentalBufferTests(unittest.TestCase):
     def test_private_reuse_fallback_and_error_ownership(self):
         with tempfile.TemporaryDirectory(prefix='esp-packet-buffer-') as temp:
             path = Path(temp)
@@ -86,8 +86,8 @@ class BufferTests(unittest.TestCase):
             (path / 'harness.c').write_text(HARNESS)
             binary = path / 'check'
             subprocess.run(['gcc', '-std=c11', '-O2', '-Wall', '-Wextra', '-Werror',
-                            '-I', str(path), '-I', str(ROOT / 'main'),
-                            str(path / 'harness.c'), str(ROOT / 'main/packet_buffer.c'),
+                            '-I', str(path), '-I', str(ROOT / 'experiments'),
+                            str(path / 'harness.c'), str(ROOT / 'experiments/packet_buffer.c'),
                             '-o', str(binary)], check=True)
             subprocess.run([str(binary)], check=True)
 

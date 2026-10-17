@@ -8,9 +8,9 @@ Choose a different AP third octet when the upstream network overlaps `192.168.X.
 
 UART runs at 115200 baud. `status` is a current state/resource snapshot; `events` is a bounded history of significant events; `log` controls live diagnostic output. The everyday log level is WARN. Use INFO temporarily and return to WARN afterward. Full text logs are not stored in Flash.
 
-The firmware displays `gateway> ` and echoes accepted ASCII characters. Backspace/Delete removes the last character; Enter submits once, including CRLF. Do not type the prompt itself. Disable terminal local echo to avoid duplicate characters; use `log warn`/`log off` if logs interrupt the input line. Input is bounded to 95 bytes, with one nonempty command per second and no arrow-key/history editing.
+The firmware displays `gateway> ` and echoes accepted ASCII characters. Backspace/Delete removes the last character; Enter submits once, including CRLF. Do not type the prompt itself. Disable terminal local echo to avoid duplicate characters; use `log warn`/`log off` if logs interrupt the input line. Input is bounded to 95 bytes. State-changing/recovery commands have a one-second rate limit; `help`, `status`, `events`, argument-free `log`, and `cancel` can run immediately. Arrow-key/history editing is unavailable.
 
-The LED's green Internet state only describes the recent DNS/HTTP check target. An accepted maintenance task is not proof of restored Internet connectivity. Web operation results match task IDs; restart completion matches a changed boot identifier. A missing response does not cause an automatic repeat POST. The page stops waiting after 90 seconds and offers the new address when the subnet changes.
+The LED's green Internet state only describes the recent DNS/HTTP check target. An accepted maintenance task is not proof of restored Internet connectivity. Web operation results match task IDs; restart completion matches a changed boot identifier. A missing response does not cause an automatic repeat POST. Network saves and queued operations stop waiting after 90 seconds and offer the new address when the subnet changes. Lost immediate-setting/action responses do not lock subsequent controls or network confirmation: status polling observes the target state, without automatically resending the request or proving which request produced it.
 
 Status refresh preserves unsaved Internet-check choices, and events follow the page language. HTTP requests have a 5-second network receive/send deadline and 1024-byte body limit; rejected/incomplete bodies close the connection rather than entering the SDK's leftover-body drain. Rollback still runs in the HTTP task, so network waits are bounded rather than promising exact real-time recovery.
 
@@ -28,7 +28,7 @@ Flashing, monitor and capture must not simultaneously own the same UART. On Linu
 
 ## lwIP override
 
-`python tools/prepare_lwip.py restore` reverses the verified project-local `ip4.c` patch, leaving global IDF untouched; Linux can also use `python3`. This offline operation does not check the whole component. Transparent mode needs the patch; run `apply` and `check` before building it again. These commands check both pinned revisions and committed SDK component contents, accepting text LF/CRLF differences but rejecting actual edits, missing files or extra sources. Unexpected local edits also cause refusal; back up and review them instead of forcing an overwrite.
+`python tools/prepare_lwip.py restore` reverses the verified project-local `ip4.c` patch, leaving global IDF untouched; Linux can also use `python3`. This offline operation does not check the whole component. Transparent mode needs the patch; run `apply` and `check` before building it again. These commands check both pinned revisions and tracked SDK component contents, accepting text LF/CRLF differences but rejecting actual edits, missing tracked files, unexpected files in the local override and symlinks. SDK-local untracked caches are ignored and not copied. Back up and review unexpected source edits instead of forcing an overwrite.
 
 ## Tested boundary
 

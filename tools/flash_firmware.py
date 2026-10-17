@@ -15,7 +15,7 @@ import struct
 import subprocess
 import sys
 
-ESPTOOL_VERSION = "5.5.0"
+ESPTOOL_VERSION = "5.5.0"  # Recommended version; compatible 5.x installations are accepted.
 PROJECT = "esp32-socks5-gateway"
 FLASH_SETTINGS = {"flash_mode": "dio", "flash_size": "16MB", "flash_freq": "80m"}
 IMAGE_LAYOUT = {
@@ -179,9 +179,11 @@ def flash(port, baud, images):
         installed = importlib.metadata.version("esptool")
     except importlib.metadata.PackageNotFoundError:
         installed = "not installed"
-    if installed != ESPTOOL_VERSION:
-        raise ValueError(f"esptool {installed}; install the tested version with: "
-                         f"python -m pip install esptool=={ESPTOOL_VERSION}")
+    if installed.split(".", 1)[0] != "5":
+        raise ValueError(f"esptool {installed}; this helper supports esptool 5.x "
+                         f"({ESPTOOL_VERSION} recommended). Use a separate virtual environment "
+                         f"and install with: python -m pip install esptool=={ESPTOOL_VERSION}; "
+                         "do not replace the SDK's dependencies")
     if not port or port.startswith("-"):
         raise ValueError("A serial port such as COM5 or /dev/ttyACM0 is required")
     # Check the real flash capacity before programming. PSRAM cannot be checked

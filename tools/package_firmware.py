@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Create script-free factory/update firmware assets from a public N16R8 build."""
 import argparse
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import hashlib
 import json
 import shutil
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -15,9 +16,10 @@ from flash_firmware import (ESPTOOL_VERSION, FLASH_SETTINGS, IMAGE_LAYOUT, PROJE
                             RELEASE_ARTIFACTS, merge_images, sha256, validate_image, verify_bundle)
 
 ROOT = Path(__file__).resolve().parents[1]
-IDF_COMMIT = "fff9895c82d744c7237be8847347bdd1b07c6643"
-LWIP_COMMIT = "c6f2f878e7b0f86033214b85547d579be43351e3"
-PATCHED_IP4_SHA256 = "410188f50ca79c81a8ba4f396bbef9f15cb0c0cf16a08e2d8623234f88a07267"
+PATCH_METADATA = json.loads((ROOT / "patches/lwip-v6.1.json").read_text(encoding="utf-8"))
+IDF_COMMIT = PATCH_METADATA["idf_commit"]
+LWIP_COMMIT = PATCH_METADATA["lwip_commit"]
+PATCHED_IP4_SHA256 = PATCH_METADATA["patched_sha256"]
 SOURCE_FILES = {
     "bootloader": "bootloader/bootloader.bin",
     "partition-table": "partition_table/partition-table.bin",
@@ -32,132 +34,40 @@ DEFAULT_PROXY = {
     "PROXY_PIPELINE_DIAG": False, "PROXY_LINK_BENCH": False,
 }
 
-FLASHING = r"""# ESP32-S3 N16R8 firmware
+FLASHING = """# ESP32-S3 N16R8 firmware
 
-Only for ESP32-S3 with 16 MB Flash and 8 MB octal PSRAM. Read manifest.json
-for the build version and source revision; a dirty build is a local review
-artifact. Download from a trusted source. SHA256 detects damaged files but
-cannot authenticate a publisher. Keep LICENSE, THIRD_PARTY_NOTICES.md and
-LICENSES/ with redistributed firmware. No ESP-IDF or project script is needed.
+Only for ESP32-S3 with 16 MB Flash and 8 MB octal PSRAM. No ESP-IDF or
+project-specific host script is required. Use official esptool (5.x; 5.5.0 is
+the recommended version) or Espressif's Windows Flash Download Tool.
 
-## Choose the correct image
-
-| File | Flash offset | Use and saved configuration |
+| Image | Offset | Purpose |
 | --- | --- | --- |
-| factory.bin | 0x0 | Initial installation or reset. Includes bootloader, partition table and app. Erases NVS, including saved Wi-Fi, SOCKS5 and management settings. |
-| app.bin | 0x10000 | Update only when the installed bootloader and partition layout are compatible with this release. Normally preserves NVS. |
-| images/*.bin | 0x0 / 0x8000 / 0x10000 | Advanced split-image flashing. Writes the bootloader, partition table and app without writing the NVS range. |
+| factory.bin | 0x0 | First installation/reset: bootloader, partition table and app. Clears saved NVS settings, including Wi-Fi and management credentials. |
+| app.bin | 0x10000 | Application-only serial update. Requires a compatible installed bootloader/partition table; normally retains NVS. No OTA support. |
+| images/*.bin | 0x0 / 0x8000 / 0x10000 | Advanced three-image update; does not write the NVS range. |
 
-factory.bin is a merged raw image, not a 16 MB device dump. Its address gaps,
-including NVS at 0x9000-0xefff, contain 0xff and are erased when flashed. Do not
-choose factory.bin when you intend to keep settings. app.bin alone cannot boot
-a blank device. Compare the installed release's partition and compatibility
-notes before an app-only update. If compatibility is unknown, save the settings
-and use factory.bin, then configure the device again. No saved NVS, private
-credentials, sdkconfig, ELF files or executable scripts are distributed.
+factory.bin fills address gaps (including NVS) with 0xff. It is not a full-chip
+dump. Do not flash it to keep existing settings. No erase-flash is needed.
+Check that flash-id reports 16 MB; PSRAM is checked by firmware at boot.
 
-## Verify the download
+For Windows/Linux setup, official flashing commands, USB/serial troubleshooting
+and first boot, read:
+https://github.com/noaic/esp32-socks5-gateway/blob/main/docs/flash-prebuilt.md
+The full developer package uses the short names above; official Release BINs
+have a version/hardware prefix and app.bin is named -sysupgrade.bin.
 
-Extract firmware.zip into a new directory, or download all loose files together.
-SHA256SUMS covers the payload files and manifest (excluding itself and the ZIP).
-firmware.zip.sha256 beside the archive covers the ZIP separately.
+manifest.json records source revision/version and hashes; its esptool_version is
+the recommended host flashing version, not the SDK build-tool version. SHA256SUMS covers
+payload files and manifest; firmware.zip.sha256 separately covers firmware.zip.
+Compare hashes before flashing. Hashes detect corruption, not publisher identity;
+download from a trusted source. A dirty source build is for local review.
 
-Windows PowerShell:
-
-```powershell
-Get-FileHash .\firmware.zip -Algorithm SHA256
-Get-Content .\firmware.zip.sha256
-Get-FileHash .\factory.bin -Algorithm SHA256
-Select-String '  factory.bin$' .\SHA256SUMS
-```
-
-Linux Bash:
-
-```bash
-sha256sum -c firmware.zip.sha256
-sha256sum -c SHA256SUMS
-```
-
-The ZIP checksum sidecar is a separate download, not inside the ZIP. If you only
-downloaded loose files, skip the ZIP checksum command. If you intend to flash
-app.bin, compare its hash against its entry in SHA256SUMS instead.
-
-## Flash with official esptool
-
-Use Python 3.10 or newer; 64-bit Python 3.12 is recommended. Install the official
-esptool package in an isolated environment. Windows 11 PowerShell, from the
-extracted/download directory (replace COM5 with the actual serial port):
-
-```powershell
-py -3 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install esptool==5.5.0
-.\.venv\Scripts\python.exe -m esptool --chip esp32s3 --port COM5 flash-id
-.\.venv\Scripts\python.exe -m esptool --chip esp32s3 --port COM5 --baud 115200 write-flash 0x0 factory.bin
-```
-
-For a compatible app-only update, run this INSTEAD of the factory command:
-
-```powershell
-.\.venv\Scripts\python.exe -m esptool --chip esp32s3 --port COM5 --baud 115200 write-flash 0x10000 app.bin
-```
-
-Linux Bash (replace /dev/ttyACM0 with the actual serial port):
-
-```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install esptool==5.5.0
-.venv/bin/python -m esptool --chip esp32s3 --port /dev/ttyACM0 flash-id
-.venv/bin/python -m esptool --chip esp32s3 --port /dev/ttyACM0 --baud 115200 write-flash 0x0 factory.bin
-```
-
-For a compatible app-only update, run this INSTEAD of the factory command:
-
-```bash
-.venv/bin/python -m esptool --chip esp32s3 --port /dev/ttyACM0 --baud 115200 write-flash 0x10000 app.bin
-```
-
-Check that flash-id reports 16MB before writing. PSRAM is checked at firmware
-boot, not by flash-id. On Ubuntu/Debian you may need python3-venv. Serial-device
-access follows the distribution's group rules. WSL2 needs USB passthrough;
-flashing directly from Windows is usually easier. Close serial monitors first.
-Install the board's USB-UART driver if no port appears. If automatic download
-mode fails, hold BOOT, tap RESET, release BOOT and retry. Increase --baud to
-460800 only with a reliable connection. No erase-flash command is required.
-
-On Windows, Espressif's official Flash Download Tool is a GUI alternative:
-https://docs.espressif.com/projects/esp-test-tools/en/latest/esp32s3/production_stage/tools/flash_download_tool.html
-Select ESP32-S3 and factory.bin at 0x0. Keep the original image parameters
-(enable DoNotChgBin if shown); the image is already DIO, 80 MHz and 16 MB.
-
-Advanced split flashing uses the same official write-flash command with:
-
-```text
-0x0 images/bootloader.bin 0x8000 images/partition-table.bin 0x10000 images/esp32-socks5-gateway.bin
-```
-
-The optional repository helper tools/flash_firmware.py --directory <directory>
---check verifies this layout. With --port it writes only these split images;
-it is not included in this release and is not required for normal flashing.
-
-## After flashing
-
-After a factory install/reset, connect to Wi-Fi ESP32-Transparent-Proxy (password
-esp32proxy), open http://192.168.4.1/ and create the management password. Configure
-upstream Wi-Fi and SOCKS5 in the Web panel. Do not leave public defaults active
-around untrusted users. Compatible app-only or split updates normally retain
-the device's previous AP address, password and settings. Startup recovery can
-clear exhausted/incompatible NVS or restore defaults for invalid settings.
-
-The firmware console uses UART0 at 115200, which may be a different connector
-from native USB flashing. Use the board's UART bridge for console output:
-
-```text
-python -m serial.tools.miniterm <serial-port> 115200 --raw
-```
-
-Use the same virtual environment's Python executable as above. Exit miniterm
-with Ctrl+]. Keep terminal local echo off; the firmware echoes input. Other
-serial terminals should use 115200 8N1 and Enter/CRLF.
+Keep LICENSE, THIRD_PARTY_NOTICES.md and LICENSES/ when redistributing firmware.
+No private NVS, sdkconfig, ELF or executable helper scripts are included.
+After a factory reset, connect to ESP32-Transparent-Proxy (esp32proxy), open
+http://192.168.4.1/ and set the management password and upstream configuration.
+Existing compatible updates keep their previous settings; firmware recovery may
+clear incompatible or exhausted NVS.
 """
 
 
@@ -233,10 +143,45 @@ def provenance(root, description):
             "patched_ip4_sha256": PATCHED_IP4_SHA256}
 
 
-def package(build, output, root=ROOT):
+def release_prefix(root, description, source):
+    version = description.get("project_version", "")
+    if not isinstance(version, str) or not re.fullmatch(r"v[0-9]{2}\.[0-9]{2}\.[0-9]{2}", version):
+        raise ValueError("Release export requires a vYY.MM.DD version tag; rebuild that clean tag")
+    year, month, day = map(int, version[1:].split("."))
+    try:
+        date(2000 + year, month, day)
+    except ValueError as error:
+        raise ValueError("Release version must contain a valid calendar date") from error
+    if source.get("dirty") is not False:
+        raise ValueError("Release export requires a clean source checkout")
+    if git(root, "rev-parse", f"refs/tags/{version}^{{commit}}") != source["git_revision"]:
+        raise ValueError("Release tag does not identify the packaged source revision")
+    return f"{PROJECT}-{version}-esp32s3-n16r8"
+
+
+def copy_outputs(outputs):
+    """Create exclusive destinations and remove our partial outputs on failure."""
+    created = []
+    try:
+        for staged, output in outputs:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.mkdir()  # Never replace a path another process created.
+            created.append(output)
+            shutil.copytree(staged, output, dirs_exist_ok=True)
+    except BaseException:
+        for output in reversed(created):
+            shutil.rmtree(output, ignore_errors=True)
+        raise
+
+
+def package(build, output, root=ROOT, release=None):
+    for destination in (output, release):
+        if destination is not None and (destination.exists() or destination.is_symlink()):
+            raise ValueError("Output already exists; choose a new directory or remove the old local artifact")
     root, build, output = root.resolve(), build.resolve(), output.resolve()
-    if output.exists():
-        raise ValueError("Output already exists; choose a new directory or remove the old local artifact")
+    release = release.resolve() if release is not None else None
+    if release is not None and (output.is_relative_to(release) or release.is_relative_to(output)):
+        raise ValueError("Package and Release output directories must be separate and not nested")
     description = read_json(regular_file(build, "project_description.json"))
     if (description.get("project_name") != PROJECT or description.get("target") != "esp32s3"
             or Path(description.get("project_path", "")).resolve() != root):
@@ -253,8 +198,10 @@ def package(build, output, root=ROOT):
         if args.get(kind) != {"offset": hex(IMAGE_LAYOUT[kind][0]), "file": filename, "encrypted": "false"}:
             raise ValueError(f"Unexpected {kind} flash metadata")
     source = provenance(root, description)
+    prefix = release_prefix(root, description, source) if release is not None else None
     with tempfile.TemporaryDirectory(prefix="gateway-package-") as temporary:
-        staged = Path(temporary)
+        staged = Path(temporary) / "bundle"
+        staged.mkdir()
         images = []
         for kind, filename in SOURCE_FILES.items():
             data = regular_file(build, filename).read_bytes()
@@ -313,21 +260,30 @@ def package(build, output, root=ROOT):
                 archive.write(path, path.relative_to(staged).as_posix())
         (staged / "firmware.zip.sha256").write_text(
             f"{sha256(archive_path.read_bytes())}  firmware.zip\n", encoding="utf-8")
-        output.parent.mkdir(parents=True, exist_ok=True)
-        # copytree creates the directory exclusively; never overwrite prior artifacts.
-        shutil.copytree(staged, output)
+        outputs = [(staged, output)]
+        if release is not None:
+            exported = Path(temporary) / "release"
+            exported.mkdir()
+            for filename, suffix in (("factory.bin", "factory"), ("app.bin", "sysupgrade")):
+                shutil.copy2(staged / filename, exported / f"{prefix}-{suffix}.bin")
+            outputs.append((exported, release))
+        copy_outputs(outputs)
     return manifest
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-dir", required=True, type=Path, help="completed idf.py build directory")
-    parser.add_argument("--output-dir", required=True, type=Path, help="new release directory, usually under dist/")
+    parser.add_argument("--output-dir", required=True, type=Path, help="new full validation package directory, usually under dist/")
+    parser.add_argument("--release-dir", type=Path,
+                        help="optional separate new directory for only two versioned BINs; requires a clean vYY.MM.DD tag")
     args = parser.parse_args(argv)
     try:
-        manifest = package(args.build_dir, args.output_dir)
+        manifest = package(args.build_dir, args.output_dir, release=args.release_dir)
         print(f"Created {args.output_dir} ({manifest['source']['git_revision'][:12]}, "
               f"dirty={manifest['source']['dirty']}); script-free factory/app images and firmware.zip")
+        if args.release_dir is not None:
+            print(f"Exported two versioned factory/sysupgrade BINs to {args.release_dir}; nothing was uploaded")
         return 0
     except (ValueError, OSError, KeyError, UnicodeError, subprocess.CalledProcessError) as error:
         print(f"ERROR: {error}", file=sys.stderr)

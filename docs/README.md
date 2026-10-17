@@ -14,9 +14,9 @@ Current reference material:
 
 - [Architecture](architecture.md): modules, packet path, ownership, and resource limits.
 - [Maintenance and recovery](maintenance.md): configuration trials, UART, reset behavior, and recovery boundaries.
-- [Performance and validation](performance.md): historical measurements, current validation, and their limits.
+- [Performance and validation](performance.md): historical radio measurements, connection limits, released verification baseline, and remaining hardware checks.
 - [Tool usage](../tools/README.md): preparation, serial capture, probes, benchmarks, and package creation.
 - [License](../LICENSE) and [third-party notices](../THIRD_PARTY_NOTICES.md): original-project and upstream licensing; [Xray example notices](../examples/LICENSE.md) describe the separately licensed adapted template.
-- [Development history](history/README.md): sanitized original notes, mainly in Chinese; includes reverted experiments. These records describe their historical version, not necessarily current firmware behavior.
+- [Development history](history/README.md): sanitized original notes, mainly in Chinese, including [dated audit/build records](history/audit-validation-2026-10.md) and reverted experiments. Historical statements about uncommitted builds or pending releases are not current project status.
 
 The current guides live with the source so a checkout/tag keeps the matching build instructions. Wiki or community notes can supplement them; they do not replace the exact SDK, patch, and recovery instructions in this repository.

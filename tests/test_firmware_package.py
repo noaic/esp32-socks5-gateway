@@ -95,6 +95,15 @@ class FirmwarePackageTests(unittest.TestCase):
             archive.extractall(extracted)
         return extracted
 
+    def release_build(self, version="v26.10.16", dirty=False):
+        self.description["project_version"] = version
+        self.source["dirty"] = dirty
+        app = self.build / packager.SOURCE_FILES["app"]
+        data = bytearray(app.read_bytes())
+        data[48:80] = version.encode().ljust(32, b"\0")
+        app.write_bytes(data)
+        self.persist()
+
     def test_bundle_roundtrip_has_script_free_images_and_legal_material(self):
         directory = self.bundle()
         manifest, images = flash.verify_bundle(directory)
@@ -224,6 +233,68 @@ class FirmwarePackageTests(unittest.TestCase):
             packager.package(self.build, self.output, self.root)
         self.assertEqual(self.output.read_bytes(), b"keep previous bundle")
 
+    def test_optional_release_export_contains_only_two_correctly_named_images(self):
+        self.release_build()
+        release = Path(self.temp.name) / "public-release"
+        with mock.patch.object(packager, "git", return_value=self.source["git_revision"]) as git:
+            manifest = packager.package(self.build, self.output, self.root, release=release)
+        git.assert_called_once_with(self.root, "rev-parse", "refs/tags/v26.10.16^{commit}")
+        prefix = "esp32-socks5-gateway-v26.10.16-esp32s3-n16r8"
+        self.assertEqual(sorted(path.name for path in release.iterdir()),
+                         [f"{prefix}-factory.bin", f"{prefix}-sysupgrade.bin"])
+        self.assertEqual((release / f"{prefix}-factory.bin").read_bytes(),
+                         (self.output / "factory.bin").read_bytes())
+        self.assertEqual((release / f"{prefix}-sysupgrade.bin").read_bytes(),
+                         (self.output / "app.bin").read_bytes())
+        self.assertEqual(manifest["build_project_version"], "v26.10.16")
+        flash.verify_bundle(self.output)
+
+    def test_release_export_rejects_dirty_invalid_date_or_wrong_tag(self):
+        release = Path(self.temp.name) / "public-release"
+        for version, dirty in (("v26.10.16", True), ("26.10.16", False),
+                               ("v26.02.30", False), ("v26.10.16-1-gabc123", False)):
+            with self.subTest(version=version, dirty=dirty):
+                self.release_build(version, dirty)
+                with self.assertRaises(ValueError):
+                    packager.package(self.build, self.output, self.root, release=release)
+                self.assertFalse(self.output.exists())
+                self.assertFalse(release.exists())
+        self.release_build()
+        with mock.patch.object(packager, "git", return_value="b" * 40), \
+                self.assertRaisesRegex(ValueError, "tag"):
+            packager.package(self.build, self.output, self.root, release=release)
+        self.assertFalse(self.output.exists())
+        self.assertFalse(release.exists())
+
+    def test_release_outputs_cannot_overlap_or_overwrite_existing_files(self):
+        self.release_build()
+        for release in (self.output, self.output / "nested", self.output.parent):
+            with self.subTest(release=release), self.assertRaises(ValueError):
+                packager.package(self.build, self.output, self.root, release=release)
+            self.assertFalse(self.output.exists())
+        release = Path(self.temp.name) / "public-release"
+        release.write_bytes(b"existing release")
+        with self.assertRaisesRegex(ValueError, "exists"):
+            packager.package(self.build, self.output, self.root, release=release)
+        self.assertEqual(release.read_bytes(), b"existing release")
+        self.assertFalse(self.output.exists())
+
+    def test_failed_release_copy_removes_both_partial_output_directories(self):
+        self.release_build()
+        release = Path(self.temp.name) / "public-release"
+        copytree = packager.shutil.copytree
+        def fail_export(*args, **kwargs):
+            if Path(args[1]) == release:
+                (release / "partial.bin").write_bytes(b"incomplete")
+                raise OSError("simulated release copy failure")
+            return copytree(*args, **kwargs)
+        with mock.patch.object(packager, "git", return_value=self.source["git_revision"]), \
+                mock.patch.object(packager.shutil, "copytree", side_effect=fail_export), \
+                self.assertRaisesRegex(OSError, "simulated"):
+            packager.package(self.build, self.output, self.root, release=release)
+        self.assertFalse(self.output.exists())
+        self.assertFalse(release.exists())
+
     def test_app_binary_version_must_match_build_metadata(self):
         app = self.build / packager.SOURCE_FILES["app"]
         data = bytearray(app.read_bytes())
@@ -295,6 +366,18 @@ class FirmwarePackageTests(unittest.TestCase):
             self.assertNotIn("--erase-all", write)
             self.assertEqual(write[-6::2], ["0x0", "0x8000", "0x10000"])
 
+    def test_helper_accepts_compatible_esptool_5_versions_without_dependency_changes(self):
+        for version in ("5.3.0.dev0", "5.5.0", "5.6.0"):
+            with self.subTest(version=version), \
+                    mock.patch.object(flash.importlib.metadata, "version", return_value=version), \
+                    mock.patch.object(flash.subprocess, "run", side_effect=[
+                        subprocess.CompletedProcess([], 0, "Detected flash size: 16MB\n", ""),
+                        subprocess.CompletedProcess([], 0)]) as hardware, \
+                    contextlib.redirect_stdout(io.StringIO()):
+                flash.flash("COM5", 115200, [])
+            self.assertEqual(hardware.call_count, 2)
+            self.assertFalse(any("pip" in call.args[0] for call in hardware.call_args_list))
+
     def test_flash_aborts_on_wrong_capacity_or_dependency(self):
         for capacity in ("8MB", "32MB", "unknown"):
             with self.subTest(capacity=capacity), \
@@ -304,10 +387,13 @@ class FirmwarePackageTests(unittest.TestCase):
                     contextlib.redirect_stdout(io.StringIO()), self.assertRaises(ValueError):
                 flash.flash("COM5", 115200, [])
             self.assertEqual(hardware.call_count, 1)
-        with mock.patch.object(flash.importlib.metadata, "version", return_value="4.0"), \
-                mock.patch.object(flash.subprocess, "run") as hardware, self.assertRaises(ValueError):
-            flash.flash("COM5", 115200, [])
-        hardware.assert_not_called()
+        for version in ("4.0", "6.0"):
+            with self.subTest(version=version), \
+                    mock.patch.object(flash.importlib.metadata, "version", return_value=version), \
+                    mock.patch.object(flash.subprocess, "run") as hardware, \
+                    self.assertRaisesRegex(ValueError, "separate virtual environment"):
+                flash.flash("COM5", 115200, [])
+            hardware.assert_not_called()
 
 
 class FirmwareProvenanceTests(unittest.TestCase):

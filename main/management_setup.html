@@ -1,7 +1,7 @@
 <!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title data-i18n="setup_title">Set management password</title><style>body{font:16px system-ui,sans-serif;max-width:500px;margin:40px auto;padding:20px;background:#f3f5f8;color:#182335}main{padding:24px;background:white;border-radius:12px}h1{font-size:23px}p{line-height:1.7}label{display:block;margin:18px 0}input,button{font:inherit;padding:11px;border-radius:6px;border:1px solid #aebaca;box-sizing:border-box;width:100%}input{margin-top:8px}button{background:#245ac7;color:white;cursor:pointer}#message{white-space:pre-wrap;line-height:1.7}[hidden]{display:none!important}a{display:block;margin-top:15px;color:#245ac7}</style>
 <main><h1 data-i18n="setup_heading">First-time management password setup</h1><p><span data-i18n="setup_intro">Set a password before viewing status or changing configuration. The account is always</span> <strong>admin</strong><span data-i18n="setup_independent">; its password is separate from the Wi-Fi password.</span></p>
-<form id="setup"><label><span data-i18n="setup_password">Management password</span><input id="password" type="password" required minlength="12" maxlength="64" autocomplete="new-password"></label><label><span data-i18n="setup_confirm">Enter it again</span><input id="confirm" type="password" required minlength="12" maxlength="64" autocomplete="new-password"></label><button id="save" type="submit" data-i18n="setup_save">Set password</button></form>
+<form id="setup"><label><span data-i18n="setup_password">Management password</span><input id="password" type="password" required autocomplete="new-password"></label><label><span data-i18n="setup_confirm">Enter it again</span><input id="confirm" type="password" required autocomplete="new-password"></label><button id="save" type="submit" data-i18n="setup_save">Set password</button></form>
 <p id="message" role="status"></p><a id="login" href="/" hidden data-i18n="setup_login">Open management page and log in</a><p><span data-i18n="setup_help">Use 12–64 bytes; an ASCII combination that you can store safely is recommended. Keep the password;</span><strong><span data-i18n="setup_reset_help">RST/EN and power cycling only restart the device; they do not clear the password.</span></strong></p></main>
 <script>
 'use strict';
@@ -18,6 +18,7 @@ const text={
  "setup_done": ["Password saved; no restart is needed. Open the management page and log in with account admin and the password you just set.","口令已保存，无需重启。打开管理页，用账号 admin 和刚设置的口令登录。"],
  "saving": ["Saving…","正在保存…"],
  "password_length": ["The password must be 12–64 bytes.","口令需为 12～64 字节。"],
+ "password_controls": ["The password cannot contain control characters.","口令不能包含控制字符。"],
  "password_mismatch": ["The two passwords do not match.","两次输入的口令不一致。"],
  "timeout": ["Request timed out (8 seconds)","请求超时（8 秒）"],
  "network_failed": ["Network request failed","网络请求失败"],
@@ -111,5 +112,5 @@ async function requestJSON(path,payload){
  finally{clearTimeout(timer);}
 }
 const el=id=>document.getElementById(id);let busy=false;
-el('setup').onsubmit=async event=>{event.preventDefault();if(busy)return;const password=el('password').value,confirmation=el('confirm').value;if(password!==confirmation){el('message').textContent=t("password_mismatch");return;}const bytes=new TextEncoder().encode(password).length;if(bytes<12||bytes>64){el('message').textContent=t("password_length");return;}busy=true;el('save').disabled=true;el('message').textContent=t("saving");try{await requestJSON('/api/setup',{password,confirm:confirmation});el('password').value=el('confirm').value='';el('setup').hidden=true;el('login').hidden=false;el('message').textContent=t("setup_done");}catch(error){el('message').textContent=t("setup_failed", (error.message));busy=false;el('save').disabled=false;}};
+el('setup').onsubmit=async event=>{event.preventDefault();if(busy)return;const password=el('password').value,confirmation=el('confirm').value;if(password!==confirmation){el('message').textContent=t("password_mismatch");return;}const bytes=new TextEncoder().encode(password).length;if(bytes<12||bytes>64){el('message').textContent=t("password_length");return;}if(/[\u0000-\u001f\u007f]/.test(password)){el('message').textContent=t("password_controls");return;}busy=true;el('save').disabled=true;el('message').textContent=t("saving");try{await requestJSON('/api/setup',{password,confirm:confirmation});el('password').value=el('confirm').value='';el('setup').hidden=true;el('login').hidden=false;el('message').textContent=t("setup_done");}catch(error){el('message').textContent=t("setup_failed", (error.message));busy=false;el('save').disabled=false;}};
 </script></html>

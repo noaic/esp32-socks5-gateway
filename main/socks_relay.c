@@ -100,6 +100,23 @@ typedef struct {
     uint32_t owner;
     uint16_t upstream_local_port;
 } session_t;
+/* CONNECT's BND address is metadata, not the requested destination. Only
+ * retain the header and optional one-byte domain length; the address/port
+ * can be discarded without resolving a name or enabling IPv6 forwarding.
+ * Zero means a malformed header. RFC 1928 bounds the largest reply at 262. */
+static size_t connect_reply_size(const session_t *c)
+{
+    if (c->offset < 4) return 4;
+    if (c->handshake[0] != 5 || c->handshake[1] || c->handshake[2]) return 0;
+    switch (c->handshake[3]) {
+        case 1: return 10;
+        case 4: return 22;
+        case 3:
+            if (c->offset < 5) return 5;
+            return c->handshake[4] ? 7u + c->handshake[4] : 0;
+        default: return 0;
+    }
+}
 static const socks_client_ops_t *client_ops;
 static bool owner_current(const session_t *c)
 { return !client_ops || client_ops->current(c->owner); }
@@ -272,12 +289,19 @@ static void advance(session_t *c, fd_set *rd, fd_set *wr, fd_set *ex,
             }
         }
         if (!failed && (c->state == GREETING_RX || c->state == REQUEST_RX) && FD_ISSET(c->server, rd)) {
-            size_t length = c->state == GREETING_RX ? 2 : 10;
-            int n = recv(c->server, c->handshake + c->offset, length - c->offset, 0);
+            size_t length = c->state == GREETING_RX ? 2 : connect_reply_size(c);
+            bool prefix = c->state == GREETING_RX || c->offset < 4 ||
+                (c->handshake[3] == 3 && c->offset < 5);
+            /* The downstream queue is empty during negotiation. Borrow its
+             * storage for discarded BND bytes, leaving the small header intact.
+             * Each read stops at a framing boundary so coalesced application
+             * bytes remain available to the normal relay path. */
+            unsigned char *data = prefix ? c->handshake + c->offset : c->s2c.bytes;
+            int n = recv(c->server, data, length - c->offset, 0);
             if (n > 0) {
                 c->offset += n;
-                /* Reject unsupported BND ATYP as soon as the reply header arrives. */
-                if (c->state == REQUEST_RX && c->offset >= 4 && (c->handshake[0] != 5 || c->handshake[1] != 0 || c->handshake[2] != 0 || c->handshake[3] != 1)) {
+                if (c->state == REQUEST_RX) length = connect_reply_size(c);
+                if (!length) {
                     REPORT("CONNECT rejected VER=%u REP=%u RSV=%u ATYP=%u", c->handshake[0], c->handshake[1], c->handshake[2], c->handshake[3]); reason="CONNECT_reply"; failure_errno=0; failed=true;
                 }
                 if (!failed && c->offset == length) {

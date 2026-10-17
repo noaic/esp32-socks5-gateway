@@ -58,6 +58,19 @@ function verifyManagementFeedback(source,locale){
  f=create();f.begin('relay_reset',status(),'http://192.168.10.1/',0);f.accept({queued:true,job_id:7},1);
  f.observe(status({boot_id:105,job_id:7}),5000);
  check(f.view(5000).text.includes(expected('could not be confirmed','未能确认')),'external reboot does not pretend task succeeded');
+ for(const [kind,payload,before,after]of [
+  ['led',{enabled:false},{led_enabled:true},{led_enabled:false}],
+  ['internet_settings',{enabled:false,target:1},{internet_auto:true,internet_target:0},{internet_auto:false,internet_target:1}],
+  ['confirm',{}, {pending:true},{pending:false}],
+  ['kick',{token:77},{clients:[{token:77}]},{clients:[]}]
+ ]){
+  f=create();f.begin(kind,status(before),'http://192.168.10.1/',0,payload);
+  check(f.view(0).blocked,'instant request is protected while sending: '+kind);
+  f.reject(Error('network failed'),1);f.observe(status(before),10);
+  check(!f.view(10).blocked&&f.view(10).text.includes(expected('other operations remain available','其他操作仍可使用')),'uncertain instant request leaves confirmation available: '+kind);
+  f.observe(status(after),20);
+  check(!f.view(20).blocked&&f.view(20).text.includes(expected('now visible','已达到')),'actual desired state resolves lost response: '+kind);
+ }
  return 'Management feedback ('+locale.pageLanguage+'): '+checks+' functional assertions PASS';
 }
 
@@ -84,6 +97,9 @@ async function verifyManagementPage(script,browser){
    if(mode==='config')return response({reboot:true,management_url:'http://192.168.20.1/'});
    if(mode==='led')return response({saved:true});
    if(mode==='internet'){const payload=JSON.parse(options.body);status={...status,internet_auto:payload.enabled,internet_target:payload.target};return response({saved:true});}
+   if(mode==='instant-not-applied')throw Error('network failed');
+   if(mode==='instant-drop'){status={...status,led_enabled:JSON.parse(options.body).enabled};throw Error('network failed');}
+   if(mode==='confirm'){status={...status,pending:false};return response({confirmed:true});}
    return response({queued:true,restart:true,job_id:7});
   }
   if(path==='/api/config'){configReads++;return response({ap_subnet:10,ap_ssid:'test-ap',sta_ssid:'upstream'});}
@@ -138,6 +154,14 @@ async function verifyManagementPage(script,browser){
  await Promise.resolve();await api.mutate('/api/action',{action:'led',enabled:false});
  const deliver=deferred;deferred=null;deliver(response({...status,boot_id:999,firmware:'stale'}));await stale;
  check(api.status().boot_id===103,'pre-mutation status response discarded');
+ status={...status,pending:true,led_enabled:true};await api.refresh();
+ const beforeInstant=posts.length;mode='instant-not-applied';await api.mutate('/api/action',{action:'led',enabled:false});
+ check(!api.feedback().blocked&&!node('confirm').disabled,'lost LED response cannot block the configuration deadline');
+ check(posts.length===beforeInstant+1,'uncertain instant operation is never automatically replayed');
+ mode='confirm';await api.mutate('/api/confirm',{});
+ check(!api.status().pending&&posts.length===beforeInstant+2,'configuration can be confirmed while an instant result is uncertain');
+ mode='instant-drop';await api.mutate('/api/action',{action:'led',enabled:false});
+ check(!api.feedback().blocked&&node('operation').textContent.includes(expected('now visible','已达到')),'full page observes saved LED state after lost response');
  mode='config';await api.mutate('/api/config',{ap_subnet:20});
  check(node('managementLink').href==='http://192.168.20.1/'&&!node('recoveryLink').hidden,'new subnet link rendered');
  const reads=statusReads;now=12000;interval();for(let i=0;i<20;i++)await Promise.resolve();
@@ -188,7 +212,30 @@ function verifyConnectionGuidance(locale){
 function pageI18n(script,browser){
  const document={documentElement:{lang:'en'},querySelectorAll:()=>[]};
  return new Function('navigator','document',script.slice(0,script.indexOf('const el=id=>'))+
-  ';return {t,pageLanguage,responseError,connectionGuidance:typeof connectionGuidance==="function"?connectionGuidance:null};')(browser,document);
+  ';return {t,pageLanguage,responseError,connectionGuidance:typeof connectionGuidance==="function"?connectionGuidance:null,settingsValidation:typeof settingsValidation==="function"?settingsValidation:null};')(browser,document);
+}
+function verifyUTF8Settings(locale){
+ let checks=0;const check=(ok,label)=>{checks++;if(!ok)throw Error(label);};
+ const base={sta_ssid:'router',ap_ssid:'gateway',sta_password:'',ap_password:'',admin_password:''};
+ const valid=values=>locale.settingsValidation({...base,...values})===null;
+ check(valid({admin_password:'管理测试'}),'four Chinese characters meet the 12-byte password minimum');
+ check(valid({admin_password:'😀'.repeat(16)}),'64-byte management password is accepted');
+ check(!valid({admin_password:'😀'.repeat(17)}),'68-byte management password is rejected');
+ check(!valid({admin_password:'管理测'}),'9-byte management password is rejected');
+ check(valid({sta_ssid:'中'.repeat(10)+'ab',ap_ssid:'中'.repeat(10)+'ab'}),'SSID 32-byte boundary is accepted');
+ check(!valid({sta_ssid:'中'.repeat(11)}),'33-byte upstream SSID is rejected');
+ check(!valid({ap_ssid:'中'.repeat(11)}),'33-byte AP SSID is rejected');
+ check(valid({ap_password:'中文ab'}),'8-byte AP password is accepted');
+ check(!valid({ap_password:'中文a'}),'7-byte AP password is rejected');
+ check(valid({ap_password:'中'.repeat(21)}),'63-byte AP password is accepted');
+ check(!valid({ap_password:'中'.repeat(21)+'a'}),'64-byte AP password is rejected');
+ check(valid({sta_password:'a'.repeat(64)}),'64 hexadecimal PSK bytes are accepted');
+ check(!valid({sta_password:'g'.repeat(64)}),'64 nonhexadecimal PSK bytes are rejected');
+ check(valid({sta_open:true,sta_password:'ignored'}),'explicit open Wi-Fi ignores entered password');
+ check(valid({sta_ssid:'',sta_password:'',ap_password:'',admin_password:''}),'AP-only mode and keep-password blanks remain valid');
+ check(!valid({ap_ssid:''}),'AP SSID cannot be empty');
+ check(!valid({admin_password:'password\u0001here'}),'control characters are rejected');
+ return 'Management UTF-8 settings ('+locale.pageLanguage+'): '+checks+' boundary assertions PASS';
 }
 function verifyLanguageSelection(pages){
  let checks=0;
@@ -234,6 +281,7 @@ if(typeof require==='function'&&typeof module!=='undefined'&&require.main===modu
   for(const language of ['en-US','zh-CN']){
    const browser={languages:[language],language};
    console.log(verifyManagementFeedback(source,pageI18n(script,browser)));
+   console.log(verifyUTF8Settings(pageI18n(script,browser)));
    console.log(verifyConnectionGuidance(pageI18n(script,browser)));
    console.log(await verifyManagementPage(script,browser));
   }

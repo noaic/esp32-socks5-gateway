@@ -207,9 +207,10 @@ class UDPRelayTests(unittest.TestCase):
                         '-DUDP_IDLE_MS=5000', '-DUDP_DNS_IDLE_MS=1000',
                         '-DUDP_DNS_PRESSURE_MS=1000', '-pthread',
                         '-Wall', '-Wextra', '-Werror', '-I', str(ROOT / 'main'),
+                        '-I', str(ROOT / 'experiments'),
                         str(ROOT / 'tests/udp_relay_harness.c'), str(ROOT / 'main/udp_relay.c'),
                         str(ROOT / 'main/socks_udp.c'), str(ROOT / 'main/dns_flow.c'),
-                        str(ROOT / 'main/udp_delivery.c'),
+                        str(ROOT / 'experiments/udp_delivery.c'),
                         str(ROOT / 'main/ap_clients.c'),
                         str(ROOT / 'tests/udp_send_shim.c'), '-Wl,--wrap=send',
                         '-o', str(cls.binary)], check=True)
@@ -256,7 +257,7 @@ class UDPRelayTests(unittest.TestCase):
     def command(self, proc, c):
         proc.stdin.write(c); proc.stdin.flush(); time.sleep(.05)
 
-    def test_local_output_retry_reaches_client_once_without_upstream_resend(self):
+    def test_experimental_output_retry_reaches_client_once_without_upstream_resend(self):
         with self.run_relay(env={'UDP_DELIVERY_TEST_RETRY': '1'}) as (peer, _, port):
             c = self.client(port)
             wire = self.send(c, b'locally-rejected-output')

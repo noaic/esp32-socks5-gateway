@@ -133,9 +133,9 @@ python3 tools/prepare_lwip.py check
 
 If you already have the project, enter that checkout rather than cloning again. All subsequent project commands run from the **project root, containing `CMakeLists.txt`**.
 
-`patches/lwip-v6.1-transparent-tcp.patch` contains the `ip4.c` changes; `patches/lwip-v6.1.json` records the commits and original/patched SHA-256 hashes. The script copies the entire `$IDF_PATH/components/lwip` component, including its lwIP submodule, into project `components/lwip` and modifies only that copy. ESP-IDF's [same-name component precedence](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/api-guides/build-system.html#multiple-components-with-the-same-name) selects the project override, leaving the global SDK and other projects unaffected. The generated directory is Git-ignored.
+`patches/lwip-v6.1-transparent-tcp.patch` contains the `ip4.c` changes; `patches/lwip-v6.1.json` records the commits and original/patched SHA-256 hashes. The script copies the Git-tracked files of `$IDF_PATH/components/lwip`, including its lwIP submodule, into project `components/lwip` and modifies only that copy. ESP-IDF's [same-name component precedence](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/api-guides/build-system.html#multiple-components-with-the-same-name) selects the project override, leaving the global SDK and other projects unaffected. The generated directory is Git-ignored.
 
-For `ip4.c` hash checks, CRLF is treated as LF in memory; the pinned hashes are unchanged. `apply` and `restore` write LF only to the verified project copy, and CRLF patch input is also supported without rewriting the patch file. `check` is read-only. Before copying or checking, `apply`/`check` also compare the **whole global lwIP component and submodule against their committed Git contents**, rejecting edited, missing, or extra source files even when HEAD matches. Text files allow LF/CRLF checkout differences; binary files must match byte for byte. Code/whitespace edits, a BOM, or lone CR differences are rejected. The local override must then match that verified SDK copy apart from patched `ip4.c`.
+For `ip4.c` hash checks, CRLF is treated as LF in memory; the pinned hashes are unchanged. `apply` and `restore` write LF only to the verified project copy, and CRLF patch input is supported without rewriting the patch file. `check` is read-only. `apply`/`check` compare every **Git-tracked global lwIP component/submodule file against its committed contents**, even when HEAD matches. SDK-local untracked test/editor caches are ignored and not copied. The local override must contain exactly the tracked files, differing only by patched `ip4.c`. All text comparisons accept LF/CRLF checkout differences; binary files must match byte for byte. Code/whitespace edits, a BOM, lone CR differences, missing tracked files, unexpected local files and symlinks are rejected.
 
 These commands work in either activated terminal (Linux can also use `python3`):
 
@@ -176,6 +176,29 @@ idf.py size
 `sdkconfig.defaults` supplies initial ESP32-S3, Flash, PSRAM, and feature settings. It does not overwrite an existing `sdkconfig`, so check the board settings when reusing an older project configuration.
 
 Patch preparation, build, and size checks have been verified on Linux x86_64. Windows 11/EIM, distribution package installation, and WSL2 USB steps were checked against official instructions and still require validation on those systems and a physical board.
+
+<a id="public-release-build"></a>
+
+### Build public-default firmware for packaging
+
+For your own board, keep the private `sdkconfig` and `build/` created above. The public packager intentionally rejects custom AP passwords and upstream credentials. To make distributable firmware, use a **separate, initially unused** `build-release/` directory and configuration, from the activated project terminal.
+
+Windows PowerShell:
+
+```powershell
+$ReleaseConfig = Join-Path (Get-Location) 'build-release\sdkconfig'
+idf.py -B build-release -D "SDKCONFIG=$ReleaseConfig" build
+idf.py -B build-release size
+```
+
+Linux/WSL2 Bash:
+
+```bash
+idf.py -B build-release -D SDKCONFIG="$PWD/build-release/sdkconfig" build
+idf.py -B build-release size
+```
+
+The new configuration takes public defaults from `sdkconfig.defaults`: empty upstream Wi-Fi and the shared initial AP password `esp32proxy`. Change that AP password on the board during first setup. These commands do not overwrite project-root `sdkconfig`. If `build-release/sdkconfig` already exists, its values take precedence; inspect it or choose another unused build/configuration directory instead of copying your private settings. See [packaging](flash-prebuilt.md#build-a-package-as-a-maintainer).
 
 ## 4. Flash the source-built firmware
 

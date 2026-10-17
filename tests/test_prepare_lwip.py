@@ -196,8 +196,39 @@ class PrepareLwipTests(unittest.TestCase):
 
     def test_untracked_sdk_file_is_not_silently_copied(self):
         (self.source/"unexpected.c").write_text("int unexpected;\n")
-        self.cli("apply",error="untracked files")
-        self.assertFalse(self.target.exists())
+        cache = self.source / "test_apps/.pytest_cache/README.md"
+        cache.parent.mkdir(parents=True)
+        cache.write_text("SDK test cache\n")
+        before = snapshot(self.sdk)
+        self.cli("apply")
+        self.cli("check")
+        self.assertFalse((self.target / "unexpected.c").exists())
+        self.assertFalse((self.target / "test_apps").exists())
+        self.assertEqual(snapshot(self.sdk), before)
+
+    def test_sdk_or_override_text_checkout_changes_are_accepted_read_only(self):
+        self.cli("apply")
+        for directory in (self.source, self.target):
+            with self.subTest(directory=directory):
+                (directory / "CMakeLists.txt").write_bytes(b"# fixture\r\n")
+                before = snapshot(self.sdk), snapshot(self.project)
+                self.cli("check")
+                self.assertEqual((snapshot(self.sdk), snapshot(self.project)), before)
+                self.cli("apply")
+                (directory / "CMakeLists.txt").write_bytes(b"# fixture\n")
+
+    def test_binary_line_endings_are_not_normalized(self):
+        self.cli("apply")
+        for directory, error in ((self.source, "uncommitted modification"),
+                                 (self.target, "additional modification")):
+            with self.subTest(directory=directory):
+                path = directory / "data.bin"
+                original = path.read_bytes()
+                path.write_bytes(original.replace(b"\r\n", b"\n"))
+                before = snapshot(self.sdk), snapshot(self.project)
+                self.cli("check", error=error)
+                self.assertEqual((snapshot(self.sdk), snapshot(self.project)), before)
+                path.write_bytes(original)
 
     def test_other_lwip_tracked_source_modification_is_rejected(self):
         path=self.source/"lwip/src/other.c";path.write_text("int value=0;\n")
@@ -269,6 +300,22 @@ class PrepareLwipTests(unittest.TestCase):
         for action in ("apply", "check", "restore"):
             self.cli(action, error="local symlink")
             self.assertEqual(snapshot(self.sdk), before)
+
+    def test_other_tracked_sdk_and_override_symlinks_are_rejected(self):
+        self.cli("apply")
+        for directory in (self.source, self.target):
+            with self.subTest(directory=directory):
+                path = directory / "CMakeLists.txt"
+                original = path.read_bytes()
+                destination = self.base / "same-content.txt"
+                destination.write_bytes(original)
+                path.unlink()
+                self.make_symlink(path, destination)
+                before = snapshot(self.sdk), snapshot(self.project)
+                self.cli("check", error="symlink is not allowed")
+                self.assertEqual((snapshot(self.sdk), snapshot(self.project)), before)
+                path.unlink()
+                path.write_bytes(original)
 
     def test_bad_patch_leaves_new_and_existing_overrides_untouched(self):
         good_patch = self.patch.read_bytes()

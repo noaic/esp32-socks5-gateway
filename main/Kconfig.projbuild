@@ -21,9 +21,11 @@ menu "Temporary gateway diagnostics"
     config PROXY_VERBOSE_DIAGNOSTICS
         bool "Enable periodic detailed UART statistics and CPU samples"
         default n
+        select FREERTOS_GENERATE_RUN_TIME_STATS
         help
             Development only: detailed ten-second reports, stalled-flow PCB
-            tracing and CPU snapshots. Web counters, events, errors and manual
+            tracing, per-packet driver samples and CPU runtime statistics.
+            Web counters, events, errors and manual
             connection diagnostics remain available when disabled.
     config PROXY_LINK_PROBE
         bool "Probe AP client and STA router when tracing stalled flows"

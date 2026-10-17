@@ -133,9 +133,9 @@ python3 tools/prepare_lwip.py check
 
 已有项目目录时直接进入该目录，不必重复克隆。后续的项目命令都在**包含 `CMakeLists.txt` 的项目根目录**执行。
 
-`patches/lwip-v6.1-transparent-tcp.patch` 保存 `ip4.c` 的改动，`patches/lwip-v6.1.json` 记录两个提交与修改前后的 SHA-256。脚本从 `$IDF_PATH/components/lwip` 复制整个组件及其 lwIP 子模块到项目 `components/lwip`，再只修改该副本。ESP-IDF 的 [同名组件优先规则](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/api-guides/build-system.html#multiple-components-with-the-same-name)会选用项目副本，因此全局 SDK 和其他项目不受影响；生成目录已被 Git 忽略。
+`patches/lwip-v6.1-transparent-tcp.patch` 保存 `ip4.c` 的改动，`patches/lwip-v6.1.json` 记录两个提交与修改前后的 SHA-256。脚本从 `$IDF_PATH/components/lwip` 复制组件及其 lwIP 子模块中由 Git 跟踪的文件到项目 `components/lwip`，再只修改该副本。ESP-IDF 的 [同名组件优先规则](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/api-guides/build-system.html#multiple-components-with-the-same-name)会选用项目副本，因此全局 SDK 和其他项目不受影响；生成目录已被 Git 忽略。
 
-校验 `ip4.c` 时，脚本在内存中将 CRLF 视为 LF，仍使用原有固定哈希。`apply`、`restore` 只将已验证的项目副本写为 LF；补丁文件本身为 CRLF 时也可使用，不会改写补丁文件。`check` 完全只读。复制或校验前，`apply`/`check` 还会将**全局 lwIP 组件和子模块的全部文件与 Git 已提交内容比较**：即使 HEAD 正确，也会拒绝修改、缺失或额外的源文件。文本允许 LF/CRLF 检出差异，二进制须逐字节一致；代码或空白修改、BOM（编码标记）及单独的 CR 差异不会放行。项目副本除已打补丁的 `ip4.c` 外，还须与这份已验证的 SDK 一致。
+校验 `ip4.c` 时，脚本在内存中将 CRLF 视为 LF，仍使用原有固定哈希。`apply`、`restore` 只将已验证的项目副本写为 LF；补丁本身为 CRLF 时也可使用，不会改写补丁文件。`check` 完全只读。`apply`/`check` 将**全局 lwIP 组件及子模块中每个 Git 跟踪文件与已提交内容比较**，即使 HEAD 正确也检查文件本身。SDK 中未跟踪的测试 / 编辑器缓存不会复制，也不会因此拒绝准备；项目副本则必须恰好包含这些跟踪文件，仅允许 `ip4.c` 的既定补丁。所有文本比较均接受 LF/CRLF 检出差异，二进制须逐字节一致；代码或空白修改、BOM、单独的 CR、缺失的跟踪文件、项目副本中的意外新增文件和符号链接仍会被拒绝。
 
 以下命令两种终端都可执行（Linux 也可用 `python3`）：
 
@@ -176,6 +176,29 @@ idf.py size
 `sdkconfig.defaults` 提供 ESP32-S3、Flash 和 PSRAM 等初始配置；一旦已有 `sdkconfig`，defaults 不会自动覆盖它。因此，旧项目的配置也应检查是否匹配板型。
 
 Linux x86_64 的补丁准备、编译和容量检查已验证；Windows 11/EIM、发行版包安装和 WSL2 USB 操作依据官方说明核对，仍需对应系统与实体开发板验证。
+
+<a id="public-release-build"></a>
+
+### 单独构建可公开分发的默认固件
+
+自己使用的 `sdkconfig` 和 `build/` 可以保留；公开打包工具会有意拒绝自定义 AP 密码和上游凭据。分发固件时，请在已激活的项目终端中使用**独立、初次使用**的 `build-release/` 目录与配置。
+
+Windows PowerShell：
+
+```powershell
+$ReleaseConfig = Join-Path (Get-Location) 'build-release\sdkconfig'
+idf.py -B build-release -D "SDKCONFIG=$ReleaseConfig" build
+idf.py -B build-release size
+```
+
+Linux/WSL2 Bash：
+
+```bash
+idf.py -B build-release -D SDKCONFIG="$PWD/build-release/sdkconfig" build
+idf.py -B build-release size
+```
+
+新配置读取 `sdkconfig.defaults` 中的公开默认值：上游 Wi-Fi 为空、初始 AP 共享密码为 `esp32proxy`，刷写后首次设置时再更换 AP 密码。命令不会覆盖项目根目录的私人 `sdkconfig`。如果 `build-release/sdkconfig` 已存在，仍以它为准；先检查内容，或改用另一组未使用的构建 / 配置路径，不要复制私人配置。接下来见[生成固件包](flash-prebuilt.zh-CN.md#维护者生成固件包)。
 
 ## 4. 刷写自己编译的固件
 

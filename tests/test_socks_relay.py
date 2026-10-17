@@ -112,12 +112,43 @@ class RelayTests(unittest.TestCase):
             s.sendall(data); s.shutdown(socket.SHUT_WR)
         data,reset=self.run_case(behavior,payload); self.assertEqual(data,payload); self.assertFalse(reset)
     def test_coalesced_connect_reply_and_payload(self):
-        def behavior(s):
-            self.handshake(s)
-            s.sendall(b'\x05\x00\x00\x01'+bytes(6)+b'banner')
-            self.assertEqual(exact(s,5),b'hello'); self.assertEqual(s.recv(1),b'')
-            s.shutdown(socket.SHUT_WR)
-        data,reset=self.run_case(behavior); self.assertEqual(data,b'banner'); self.assertFalse(reset)
+        replies = {
+            'IPv4': b'\x05\x00\x00\x01'+bytes(6),
+            'IPv6': b'\x05\x00\x00\x04'+socket.inet_pton(socket.AF_INET6,'::ffff:192.0.2.1')+b'\x01\xbb',
+            'domain': b'\x05\x00\x00\x03\x0dproxy.example\x01\xbb',
+            'one-byte domain': b'\x05\x00\x00\x03\x01x\x01\xbb',
+            '255-byte domain field': b'\x05\x00\x00\x03\xff'+b'x'*255+b'\x01\xbb',
+        }
+        banner=b'banner\x00\x05\x00\x00\x01'+bytes(range(256))*4
+        for name,reply in replies.items():
+            with self.subTest(bound_address=name):
+                def behavior(s):
+                    self.handshake(s)
+                    s.sendall(reply+banner)
+                    self.assertEqual(exact(s,5),b'hello'); self.assertEqual(s.recv(1),b'')
+                    s.shutdown(socket.SHUT_WR)
+                data,reset=self.run_case(behavior)
+                self.assertEqual(data,banner); self.assertFalse(reset)
+    def test_fragmented_variable_connect_reply_and_payload(self):
+        replies = [b'\x05\x00\x00\x04'+socket.inet_pton(socket.AF_INET6,'::1')+b'\x01\xbb',
+                   b'\x05\x00\x00\x03\x0dproxy.example\x01\xbb',
+                   b'\x05\x00\x00\x03\xff'+b'x'*255+b'\x01\xbb']
+        for reply in replies:
+            with self.subTest(reply_bytes=len(reply)):
+                def behavior(s):
+                    self.handshake(s,True)
+                    # Split every header byte and the final port byte. Keep
+                    # maximum-length names in bounded chunks so this checks
+                    # framing rather than the deliberately short test deadline.
+                    parts=[reply[i:i+1] for i in range(5)]
+                    parts += [reply[i:min(i+31,len(reply)-1)] for i in range(5,len(reply)-1,31)]
+                    for part in parts:
+                        s.sendall(part); time.sleep(.001)
+                    s.sendall(reply[-1:]+b'banner')
+                    self.assertEqual(exact(s,5),b'hello'); self.assertEqual(s.recv(1),b'')
+                    s.shutdown(socket.SHUT_WR)
+                data,reset=self.run_case(behavior)
+                self.assertEqual(data,b'banner'); self.assertFalse(reset)
     def test_full_duplex_with_slow_reader_and_backpressure(self):
         request=bytes(range(256))*4096
         response=bytes(reversed(range(256)))*8192
@@ -173,11 +204,32 @@ class RelayTests(unittest.TestCase):
             exact(s,3); s.sendall(b'\x05\xff')
         data,reset=self.run_case(behavior); self.assertEqual(data,b''); self.assertTrue(reset)
     def test_connect_failure_and_unsupported_reply(self):
-        for header in [b'\x05\x05\x00\x01',b'\x05\x00\x00\x03',b'\x04\x00\x00\x01']:
+        for header in [b'\x05\x05\x00\x01',b'\x04\x00\x00\x01',b'\x05\x00\x01\x01',
+                       b'\x05\x00\x00\x00',b'\x05\x00\x00\x02',b'\x05\x00\x00\xff',
+                       b'\x05\x00\x00\x03\x00'+b'x'*256]:
             with self.subTest(header=header):
                 def behavior(s):
                     self.handshake(s); s.sendall(header)
                 data,reset=self.run_case(behavior); self.assertEqual(data,b''); self.assertTrue(reset)
+    def test_truncated_connect_reply_never_forwards_bound_address(self):
+        replies=[b'', b'\x05', b'\x05\x00\x00\x01'+bytes(5),
+                 b'\x05\x00\x00\x04'+bytes(17), b'\x05\x00\x00\x03',
+                 b'\x05\x00\x00\x03\x04abc', b'\x05\x00\x00\x03\x04name\x01',
+                 b'\x05\x00\x00\x03\xff'+b'x'*254+b'\x01\xbb']
+        for reply in replies:
+            with self.subTest(reply=reply):
+                def behavior(s):
+                    self.handshake(s)
+                    s.sendall(reply); s.shutdown(socket.SHUT_WR)
+                data,reset=self.run_case(behavior)
+                self.assertEqual(data,b''); self.assertTrue(reset)
+    def test_incomplete_connect_reply_keeps_handshake_deadline(self):
+        def behavior(s):
+            self.handshake(s)
+            s.sendall(b'\x05\x00\x00\x03\xff'+b'x'*100)
+            time.sleep(.8)
+        data,reset=self.run_case(behavior)
+        self.assertEqual(data,b''); self.assertTrue(reset)
     def test_stalled_handshake_timeout(self):
         def behavior(s):
             exact(s,3); time.sleep(.8)

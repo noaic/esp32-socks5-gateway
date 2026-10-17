@@ -5,8 +5,10 @@
 #include "esp_attr.h"
 #include "esp_log.h"
 #include "esp_netif_net_stack.h"
+#if CONFIG_PROXY_VERBOSE_DIAGNOSTICS
 #include "esp_timer.h"
 #include "esp_private/wifi.h"
+#endif
 #include "lwip/priv/tcp_priv.h"
 #include "lwip/memp.h"
 
@@ -14,13 +16,20 @@
 #error "PCB allocation observer requires the pinned memp_malloc/free ABI"
 #endif
 
-typedef struct { atomic_uint calls,mem,buf,other; atomic_int last_error; } tx_counts_t;
+typedef struct {
+    atomic_uint mem,buf,other;
+#if CONFIG_PROXY_VERBOSE_DIAGNOSTICS
+    atomic_uint calls;
+    atomic_int last_error;
+#endif
+} tx_counts_t;
 static esp_netif_t *ap_handle,*sta_handle;
 static tx_counts_t ap_tx,sta_tx;
 static atomic_uint ap_udp_attempts;
 static atomic_uint udp_pre_arp_missing,udp_pre_arp_ready,udp_driver_called;
 static atomic_uint clone_input,clone_output;
 static atomic_uint client_rto,upstream_rto,client_fast,upstream_fast;
+#if CONFIG_PROXY_VERBOSE_DIAGNOSTICS
 static atomic_uint rto_state[2][3]; /* client/upstream x handshake/established/closing */
 typedef struct { atomic_uint calls,bytes,rejected,last_us,handed,freed; atomic_int held; } rx_counts_t;
 typedef struct { atomic_uint callbacks,unicast_ok,unicast_fail,last_us,short_frame; } done_counts_t;
@@ -30,14 +39,18 @@ static atomic_uint rx_peak;
 static done_counts_t ap_done,sta_done;
 static atomic_uint tx_refs,tx_frees;
 static atomic_int tx_held;
-static atomic_uint pcb_allocations,pcb_failures,pcb_peak;
+static atomic_uint pcb_allocations;
+#endif
+static atomic_uint pcb_failures,pcb_peak;
 static atomic_int pcb_live;
 
 extern esp_err_t __real_esp_netif_transmit_wrap(esp_netif_t *,void *,size_t,void *);
+#if CONFIG_PROXY_VERBOSE_DIAGNOSTICS
 extern esp_err_t __real_esp_netif_receive(esp_netif_t *,void *,size_t,void *);
 extern void __real_esp_netif_free_rx_buffer(void *,void *);
 extern void __real_esp_netif_netstack_buf_ref(void *);
 extern void __real_esp_netif_netstack_buf_free(void *);
+#endif
 extern void __real_tcp_rexmit_rto_commit(struct tcp_pcb *);
 extern void __real_tcp_rexmit_fast(struct tcp_pcb *);
 extern void *__real_memp_malloc(memp_t);
@@ -47,7 +60,9 @@ void *__wrap_memp_malloc(memp_t type)
 {
     void *result=__real_memp_malloc(type);
     if (type==MEMP_TCP_PCB) {
+#if CONFIG_PROXY_VERBOSE_DIAGNOSTICS
         atomic_fetch_add_explicit(&pcb_allocations,1,memory_order_relaxed);
+#endif
         if (!result) atomic_fetch_add_explicit(&pcb_failures,1,memory_order_relaxed);
         else {
             unsigned live=(unsigned)atomic_fetch_add_explicit(&pcb_live,1,memory_order_relaxed)+1;
@@ -71,7 +86,9 @@ esp_err_t IRAM_ATTR __wrap_esp_netif_transmit_wrap(esp_netif_t *netif,void *data
                                                 size_t len,void *pbuf)
 {
     tx_counts_t *tx=netif==ap_handle?&ap_tx:netif==sta_handle?&sta_tx:NULL;
+#if CONFIG_PROXY_VERBOSE_DIAGNOSTICS
     if (tx) atomic_fetch_add_explicit(&tx->calls,1,memory_order_relaxed);
+#endif
     if (netif==ap_handle && len>=34 && data) {
         const uint8_t *h=data;
         /* wlanif sends a contiguous Ethernet frame to this exact API. */
@@ -80,7 +97,9 @@ esp_err_t IRAM_ATTR __wrap_esp_netif_transmit_wrap(esp_netif_t *netif,void *data
     }
     esp_err_t result=__real_esp_netif_transmit_wrap(netif,data,len,pbuf);
     if (tx && result!=ESP_OK) {
+#if CONFIG_PROXY_VERBOSE_DIAGNOSTICS
         atomic_store_explicit(&tx->last_error,result,memory_order_relaxed);
+#endif
         atomic_uint *counter=result==ESP_ERR_NO_MEM?&tx->mem:
             result==ESP_ERR_ESP_NETIF_TX_FAILED?&tx->buf:&tx->other;
         atomic_fetch_add_explicit(counter,1,memory_order_relaxed);
@@ -88,6 +107,8 @@ esp_err_t IRAM_ATTR __wrap_esp_netif_transmit_wrap(esp_netif_t *netif,void *data
     return result;
 }
 
+#if CONFIG_PROXY_VERBOSE_DIAGNOSTICS
+/* These per-packet samples feed detailed UART logs, not the Web counters. */
 esp_err_t IRAM_ATTR __wrap_esp_netif_receive(esp_netif_t *netif,void *data,
                                            size_t len,void *driver_buffer)
 {
@@ -160,25 +181,39 @@ static void IRAM_ATTR wifi_tx_done(uint8_t ifidx,uint8_t *frame,uint16_t *length
         atomic_store_explicit(&done->last_us,(uint32_t)esp_timer_get_time(),memory_order_relaxed);
     }
 }
+#endif
 
 esp_err_t net_diagnostics_start_wifi(void)
 {
+#if CONFIG_PROXY_VERBOSE_DIAGNOSTICS
     /* No other component in this project installs this single observer. The
      * normal esp-netif RX and driver reference/free callbacks stay in place. */
     return esp_wifi_set_tx_done_cb(wifi_tx_done);
+#else
+    return ESP_OK;
+#endif
 }
 static inline void note_retransmit(const struct tcp_pcb *pcb,bool fast)
 {
     atomic_uint *counter=NULL;
+#if CONFIG_PROXY_VERBOSE_DIAGNOSTICS
     unsigned leg=0;
+#endif
     if (pcb->local_port==PROXY_ECHO_PORT) counter=fast?&client_fast:&client_rto;
-    else if (pcb->remote_port==PROXY_SOCKS5_PORT) { counter=fast?&upstream_fast:&upstream_rto; leg=1; }
+    else if (pcb->remote_port==PROXY_SOCKS5_PORT) {
+        counter=fast?&upstream_fast:&upstream_rto;
+#if CONFIG_PROXY_VERBOSE_DIAGNOSTICS
+        leg=1;
+#endif
+    }
     if (counter) {
         atomic_fetch_add_explicit(counter,1,memory_order_relaxed);
+#if CONFIG_PROXY_VERBOSE_DIAGNOSTICS
         if (!fast) {
             unsigned state=pcb->state==SYN_SENT || pcb->state==SYN_RCVD?0:pcb->state==ESTABLISHED?1:2;
             atomic_fetch_add_explicit(&rto_state[leg][state],1,memory_order_relaxed);
         }
+#endif
     }
 }
 void IRAM_ATTR __wrap_tcp_rexmit_rto_commit(struct tcp_pcb *pcb)
@@ -212,6 +247,7 @@ void net_diagnostics_udp_mem(uint32_t before,bool arp_resolved)
 void net_diagnostics_clone_failed(bool output)
 { atomic_fetch_add_explicit(output?&clone_output:&clone_input,1,memory_order_relaxed); }
 #define VALUE(x) atomic_load_explicit(&(x),memory_order_relaxed)
+#if CONFIG_PROXY_VERBOSE_DIAGNOSTICS
 static uint32_t sampled_age_ms(unsigned seen,atomic_uint *last_us)
 {
     if (!seen) return UINT32_MAX;
@@ -221,8 +257,10 @@ static uint32_t sampled_age_ms(unsigned seen,atomic_uint *last_us)
     uint32_t now=(uint32_t)esp_timer_get_time();
     return (now-last)/1000;
 }
+#endif
 void net_diagnostics_log(void)
 {
+#if CONFIG_PROXY_VERBOSE_DIAGNOSTICS
     ESP_LOGI("net_diag","tcp_pcb live=%d peak=%u limit=%u allocations=%u failures=%u (includes closing/TIME_WAIT)",
         VALUE(pcb_live),VALUE(pcb_peak),(unsigned)MEMP_NUM_TCP_PCB,VALUE(pcb_allocations),VALUE(pcb_failures));
     ESP_LOGI("net_diag","driver_rx AP calls=%u bytes=%u rejected=%u age_ms=%u STA calls=%u bytes=%u rejected=%u age_ms=%u",
@@ -249,6 +287,7 @@ void net_diagnostics_log(void)
     ESP_LOGI("net_diag","RTO_state client handshake=%u established=%u closing=%u upstream handshake=%u established=%u closing=%u",
         VALUE(rto_state[0][0]),VALUE(rto_state[0][1]),VALUE(rto_state[0][2]),
         VALUE(rto_state[1][0]),VALUE(rto_state[1][1]),VALUE(rto_state[1][2]));
+#endif
 }
 void net_diagnostics_snapshot(net_diagnostics_snapshot_t *out)
 {

@@ -15,26 +15,26 @@ body{font:16px system-ui,sans-serif;margin:auto;padding:18px;max-width:850px;bac
 <section><details id="configDetails"><summary data-i18n="config_heading">Network settings</summary><p data-i18n="config_help">Saving restarts the device after about 2 seconds and closes current connections. Rejoin the AP and reopen this page. Confirm within 180 seconds, or the previous configuration is restored.</p>
 <form id="settings">
 <fieldset><legend data-i18n="upstream_heading">Upstream network and proxy</legend>
-<label><span data-i18n="sta_ssid">Upstream Wi-Fi SSID</span><input name="sta_ssid" maxlength="32" autocomplete="off"></label>
-<label><span data-i18n="sta_password">Upstream Wi-Fi password</span><input name="sta_password" type="password" maxlength="64" placeholder="Leave blank to keep the current password" data-i18n-placeholder="keep_password" autocomplete="new-password"></label>
+<label><span data-i18n="sta_ssid">Upstream Wi-Fi SSID</span><input name="sta_ssid" autocomplete="off"></label>
+<label><span data-i18n="sta_password">Upstream Wi-Fi password</span><input name="sta_password" type="password" placeholder="Leave blank to keep the current password" data-i18n-placeholder="keep_password" autocomplete="new-password"></label>
 <label><input name="sta_open" type="checkbox"> <span data-i18n="sta_open">Upstream Wi-Fi has no password (clear the current password)</span></label>
 <label>SOCKS5 IPv4<input name="socks_ipv4" maxlength="15" required inputmode="decimal"></label>
 <label><span data-i18n="socks_port">SOCKS5 port</span><input name="socks_port" type="number" min="1" max="65535" required></label>
 </fieldset>
 <details id="advancedSettings"><summary data-i18n="advanced_settings">Local AP, DNS and management password</summary>
 <fieldset><legend data-i18n="ap_heading">Local AP and client network</legend>
-<label><span data-i18n="ap_ssid">AP name</span><input name="ap_ssid" maxlength="32" required></label>
-<label><span data-i18n="ap_password">AP password</span><input name="ap_password" type="password" minlength="8" maxlength="63" placeholder="Leave blank to keep the current password" data-i18n-placeholder="keep_password" autocomplete="new-password"></label>
+<label><span data-i18n="ap_ssid">AP name</span><input name="ap_ssid" required></label>
+<label><span data-i18n="ap_password">AP password</span><input name="ap_password" type="password" placeholder="Leave blank to keep the current password" data-i18n-placeholder="keep_password" autocomplete="new-password"></label>
 <label><span data-i18n="max_clients">Maximum clients</span><select name="max_clients"><option value="1">1</option><option value="2">2</option></select></label>
 <label><span data-i18n="dns_ipv4">DNS IPv4 advertised by DHCP</span><input name="dns_ipv4" maxlength="15" required inputmode="decimal"></label>
 <label><span data-i18n="ap_subnet">AP subnet third octet X (192.168.X.0/24)</span><input name="ap_subnet" type="number" min="0" max="255" step="1" required></label>
 <p data-i18n="subnet_help">The gateway and management address are 192.168.X.1. Changing this restarts the device; all clients must rejoin Wi-Fi, log in at the new address and confirm. The upstream and AP subnets must not overlap. If not confirmed, rejoin the restored subnet and reopen the old address.</p>
 </fieldset>
 <fieldset><legend data-i18n="security_heading">Management security</legend>
-<label><span data-i18n="new_admin_password">New management password</span><input name="admin_password" type="password" minlength="12" maxlength="64" placeholder="Leave blank to keep the current password; at least 12 bytes" data-i18n-placeholder="admin_password_hint" autocomplete="new-password"></label>
+<label><span data-i18n="new_admin_password">New management password</span><input name="admin_password" type="password" placeholder="Leave blank to keep the current password; at least 12 bytes" data-i18n-placeholder="admin_password_hint" autocomplete="new-password"></label>
 </fieldset>
 </details>
-<p class="warn" data-i18n="config_note">SSID and password lengths are measured in UTF-8 bytes. An empty upstream SSID starts only the AP. SOCKS5 supports IPv4 and NO AUTH only. DNS is forwarded through SOCKS5 UDP; this is not a local DNS service.</p>
+<p class="warn" data-i18n="config_note">Lengths are UTF-8 bytes: SSID up to 32, AP password 8–63, management password 12–64. Leave a password blank to keep it. A 64-byte upstream password must be a hexadecimal PSK; otherwise use 8–63 bytes. An empty upstream SSID starts only the AP. SOCKS5 supports IPv4 and NO AUTH only. DNS is forwarded through SOCKS5 UDP; this is not a local DNS service.</p>
 <button type="submit" data-i18n="save_restart">Save and restart</button></form>
 <details><summary data-i18n="defaults">Restore default configuration</summary><p data-i18n="defaults_help">Restore the build-time Wi-Fi, default SOCKS5, DNS and two-client settings. Keep the current management password. Confirmation is required after restarting.</p><button id="defaults" data-i18n="defaults_restart">Restore defaults and restart</button></details></details></section>
 <section><details id="diagnosticsDetails"><summary data-i18n="diagnostics_heading">Connection diagnostics and Internet check</summary><p data-i18n="diagnostics_intro">Use diagnostics to locate a failing stage. Tests send traffic through the configured proxy; they do not change or restart the network.</p>
@@ -116,6 +116,9 @@ const text={
  "relay_warning": ["Rebuild proxy connections? Existing TCP/UDP flows will close.","重建代理连接？现有 TCP/UDP 流会关闭。"],
  "reboot_warning": ["Restart the device? All connections will close; configuration and password are retained. Reconnect and reopen this page.","重启设备？所有连接会断开，配置和口令保留。请重连后重新打开本页。"],
  "read_first": ["Refresh and successfully read device status before performing an operation.","请先刷新并成功读取设备状态，再执行操作。"],
+ "field_bytes": ["{0}: use {1}–{2} UTF-8 bytes.","{0}：需为 {1}～{2} 个 UTF-8 字节。"],
+ "field_controls": ["{0} cannot contain control characters.","{0}不能包含控制字符。"],
+ "sta_psk_hex": ["A 64-byte upstream Wi-Fi password must be a hexadecimal PSK.","64 字节的上游 Wi-Fi 密码必须是十六进制 PSK。"],
  "read_failed": ["Could not read status: {0}. Make sure you are still connected to this AP, then click refresh to retry.","读取失败：{0}。请确认仍连接此 AP，可点击刷新重试。"],
  "restart_read_failed": ["Connection has not recovered: {0}. This may occur during restart or password changes. Stay connected to the AP and check the operation status above.","连接暂未恢复：{0}。重启或口令变更期间可能出现此提示，请保持 AP 连接并查看上方操作状态。"],
  "status_updated": ["Status updated","状态已更新"],
@@ -201,6 +204,8 @@ const text={
  "job_suffix": [", task #","，任务 #"],
  "operation_accepted": ["{0}: Request accepted{1}.","{0}：请求已接受{1}。"],
  "operation_uncertain": ["Request not confirmed: {0}. The submitted operation may still run. Reading status; it will not be automatically resubmitted.","请求未获确认：{0}。已提交的操作可能仍会执行，正在读取状态；不会自动重复提交。"],
+ "setting_uncertain": ["The response was lost: {0}. Reading device status; other operations remain available. This request will not be automatically repeated.","响应丢失：{0}。正在读取设备状态，其他操作仍可使用；不会自动重复提交本次请求。"],
+ "setting_observed": ["The requested state is now visible in device status; the original response was lost.","设备当前状态已达到所请求的结果；原请求的响应曾丢失。"],
  "operation_sending": ["{0}: Submitting…","{0}：正在提交…"],
  "operation_expired": ["Waiting for the result has exceeded 90 seconds. Refresh status and check settings or recent events; do not repeatedly submit.","等待操作结果已超过 90 秒。请刷新状态并核对配置或最近事件；不要连续重复提交。"],
  "job_superseded": ["The original operation is no longer in the current task record. Check recent events and connectivity.","原操作已不在当前任务记录中，请查看最近事件及业务状态。"],
@@ -266,7 +271,7 @@ const chineseLabels={
  "ap_heading": "本地 AP 与客户端网络",
  "subnet_help": "网关与管理入口为 192.168.X.1。修改后强制重启，所有设备需重新连接 Wi-Fi；在新地址登录并确认。上游网络不能与本地 AP 网段重叠。若未确认，恢复旧网段后需重连并打开旧地址。",
  "security_heading": "管理安全",
- "config_note": "SSID 和密码长度按 UTF-8 字节计算。上游为空则仅启动 AP。SOCKS5 只支持 IPv4、NO AUTH。DNS 通过 SOCKS5 UDP 转发，不是本地 DNS 服务。",
+ "config_note": "长度按 UTF-8 字节计：SSID 最多 32，AP 密码 8～63，管理口令 12～64。密码留空保留原值。上游密码通常为 8～63 字节；64 字节时须为十六进制 PSK。上游 SSID 留空时只启动 AP。SOCKS5 仅支持 IPv4 和 NO AUTH。DNS 经 SOCKS5 UDP 转发，不提供本地 DNS 服务。",
  "save_restart": "保存并重启",
  "defaults_help": "恢复编译时的 Wi-Fi、默认 SOCKS5、DNS 和两客户端设置；保留当前管理密码。也需要重启后确认。",
  "defaults_restart": "恢复默认并重启",
@@ -403,6 +408,17 @@ function probeGuidance(failure,source){
   code>=2000&&code<3000?'auth':'target';
  return {kind,action:source==='internet'?'internet':'diagnose',source};
 }
+function settingsValidation(data){
+ for(const [field,min,max]of [['sta_ssid',0,32],['ap_ssid',1,32],['sta_password',8,64],['ap_password',8,63],['admin_password',12,64]]){
+  const value=data[field]||'';
+  if(field.endsWith('password')&&(!value||(field==='sta_password'&&data.sta_open)))continue;
+  const bytes=new TextEncoder().encode(value).length;
+  if(bytes<min||bytes>max)return {field,key:'field_bytes',values:[min,max]};
+  if(/[\u0000-\u001f\u007f]/.test(value))return {field,key:'field_controls',values:[]};
+  if(field==='sta_password'&&bytes===64&&!/^[0-9a-f]{64}$/i.test(value))return {field,key:'sta_psk_hex',values:[]};
+ }
+ return null;
+}
 const el=id=>document.getElementById(id), form=el('settings');let busy=false,polling=false,currentSubnet=4,lastStatus=null,mutationEpoch=0,internetDraft=false,loadedConfig=null,guideAction=null;
 const disclosureKeys=new Map();
 const message=text=>{el('message').textContent=text;};
@@ -433,17 +449,26 @@ function createOperationFeedback(){
  const names={reconnect:t("reconnect"),relay_reset:t("relay_reset"),reboot:t("reboot"),diagnose:t("diagnose"),internet:t("internet"),config:t("config"),defaults:t("defaults"),led:t("led"),internet_settings:t("internet_settings"),confirm:t("confirm"),kick:t("kick")};
  const kindIds={reconnect:1,relay_reset:2,reboot:3,diagnose:4,internet:5};
  const restartKinds=['reboot','config','defaults'];
+ const immediateKinds=['led','internet_settings','confirm','kick'];
  return {
-  begin(kind,status,url,now){state={kind,beforeBoot:status&&status.boot_id,beforeJob:status?status.job_id:0,url,oldUrl:url,started:now,phase:'sending',restart:restartKinds.includes(kind),job:0,changed:false};notice='';},
+  begin(kind,status,url,now,payload={}){state={kind,payload,immediate:immediateKinds.includes(kind),beforeBoot:status&&status.boot_id,beforeJob:status?status.job_id:0,url,oldUrl:url,started:now,phase:'sending',restart:restartKinds.includes(kind),job:0,changed:false};notice='';},
   accept(data,now){if(!state)return;state.phase='waiting';state.started=now;state.job=data.job_id||0;state.restart=!!(data.restart||data.reboot);state.changed=!!data.reboot;state.url=data.management_url||state.oldUrl;if(!data.queued&&!state.restart){notice=t("operation_done");noticeUntil=now+20000;state=null;}},
   reject(error,now){if(!state)return;if(error.httpStatus){notice=t("operation_failed", (error.message));noticeUntil=now+30000;state=null;}else{state.phase='uncertain';state.started=now;state.error=error.message;}},
   observe(status,now){if(!state||state.phase==='sending')return;
    if(!state.restart&&state.beforeBoot!==undefined&&state.beforeBoot!==null&&status.boot_id!==undefined&&status.boot_id!==state.beforeBoot){notice=t("external_restart");noticeUntil=now+30000;state=null;return 'reboot';}
+   if(state.immediate&&state.phase==='uncertain'){
+    const p=state.payload;
+    const observed=state.kind==='led'?status.led_enabled===p.enabled:
+     state.kind==='internet_settings'?status.internet_auto===p.enabled&&status.internet_target===p.target:
+     state.kind==='confirm'?status.pending===false:
+     state.kind==='kick'?Array.isArray(status.clients)&&status.clients.every(c=>c.token!==p.token):false;
+    if(observed){const kind=state.kind;notice=t('setting_observed');noticeUntil=now+30000;state=null;return kind;}
+   }
    if(state.restart){
     if(state.beforeBoot!==undefined&&state.beforeBoot!==null&&status.boot_id!==undefined&&status.boot_id!==state.beforeBoot){
      notice=state.changed?(status.pending?t("restart_pending"):t("restart_no_pending")):t("restart_done");noticeUntil=now+30000;state=null;return 'reboot';
     }
-   }else{
+   }else if(!state.immediate){
     if(!state.job&&status.job_id>state.beforeJob&&status.job_action===kindIds[state.kind]&&!status.job_auto)state.job=status.job_id;
     if(state.job&&status.job_id===state.job&&!status.job_running){notice=status.job_result?t("job_failed", (names[state.kind]), (status.job_result)):state.kind==='reconnect'?t("reconnect_done"):state.kind==='diagnose'||state.kind==='internet'?t("diagnostic_done", (names[state.kind])):t("job_done", (names[state.kind]||t("operation")));noticeUntil=now+30000;state=null;}
     else if(state.job&&status.job_id>state.job){notice=t("job_superseded");noticeUntil=now+30000;state=null;}
@@ -453,10 +478,10 @@ function createOperationFeedback(){
    if(state&&state.phase!=='sending'&&now-state.started>=90000){notice=t("operation_expired");noticeUntil=now+60000;state=null;}
    if(!state)return {blocked:false,restarting:false,text:now<noticeUntil?notice:'',url:null};
    const seconds=Math.max(0,Math.floor((now-state.started)/1000));
-   let text=state.phase==='sending'?t("operation_sending", (names[state.kind]||t("operation"))):state.phase==='uncertain'?t("operation_uncertain", (state.error)):t("operation_accepted", (names[state.kind]||t("operation")), (state.job?t("job_suffix")+state.job:''));
+   let text=state.phase==='sending'?t("operation_sending", (names[state.kind]||t("operation"))):state.phase==='uncertain'?t(state.immediate?'setting_uncertain':'operation_uncertain', (state.error)):t("operation_accepted", (names[state.kind]||t("operation")), (state.job?t("job_suffix")+state.job:''));
    if(state.restart)text+=t("restart_wait", (seconds), (state.changed?t("rollback_hint")+state.oldUrl+t("period"):''));
-   else if(state.phase!=='sending')text+=t("execution_wait");
-   return {blocked:true,restarting:state.restart,text,url:state.restart?state.url:null,otherAddress:state.url!==state.oldUrl};
+   else if(state.phase!=='sending'&&!state.immediate)text+=t("execution_wait");
+   return {blocked:state.phase==='sending'||!state.immediate,restarting:state.restart,text,url:state.restart?state.url:null,otherAddress:state.url!==state.oldUrl};
   }
  };
 }
@@ -512,12 +537,12 @@ function runtimeStatus(s){
 async function refreshEvents(){try{const r=await api('/api/events');el('events').textContent=r.events.slice().reverse().map(e=>`+${Math.floor(e.last_ms/1000)}s · ${eventName(e)} · ${pageLanguage==='zh-CN'?'详情':'detail'} ${e.detail}${e.count>1?' · '+e.count+t("event_times"):''}`).join('\n')||t("no_events");}catch(error){el('events').textContent=t("events_failed", (error.message));}}
 const kib=n=>`${(n/1024).toFixed(1)} KiB`,mib=n=>`${(n/1048576).toFixed(2)} MiB`;
 const usage=(free,total,unit)=>t("heap_usage", (unit(Math.max(0,total-free))), (unit(total)), (unit(free)));
-async function refresh(){if(polling||busy||document.hidden)return;polling=true;const epoch=mutationEpoch;try{const s=await api('/api/status');if(epoch!==mutationEpoch)return;const restarted=operationFeedback.observe(s,Date.now())==='reboot'||!!(lastStatus&&s.boot_id!==undefined&&lastStatus.boot_id!==s.boot_id);lastStatus=s;if(restarted){internetDraft=false;loadedConfig=null;disclosureKeys.clear();await loadConfig();}runtimeStatus(s);el('status').textContent=t("status_text", (s.firmware), (s.ap_ip), (s.clients.length), (s.ap_client_limit), (s.sta_connected?t("ipv4_ready"):t("not_ready")), (s.sta_ip), (s.sta_connected?s.sta_rssi+t("signal_channel")+s.channel:'—'), (Math.floor(s.uptime_seconds/60)), (usage(s.internal_free,s.internal_total,kib)), (kib(s.internal_min)), (kib(s.internal_largest)), (usage(s.psram_free,s.psram_total,mib)));
+async function refresh(){if(polling||busy||document.hidden)return;polling=true;const epoch=mutationEpoch;try{const s=await api('/api/status');if(epoch!==mutationEpoch)return;const observed=operationFeedback.observe(s,Date.now());if(observed==='internet_settings'&&el('internetAuto').checked===s.internet_auto&&Number(el('internetTarget').value)===s.internet_target)internetDraft=false;const restarted=observed==='reboot'||!!(lastStatus&&s.boot_id!==undefined&&lastStatus.boot_id!==s.boot_id);lastStatus=s;if(restarted){internetDraft=false;loadedConfig=null;disclosureKeys.clear();await loadConfig();}runtimeStatus(s);el('status').textContent=t("status_text", (s.firmware), (s.ap_ip), (s.clients.length), (s.ap_client_limit), (s.sta_connected?t("ipv4_ready"):t("not_ready")), (s.sta_ip), (s.sta_connected?s.sta_rssi+t("signal_channel")+s.channel:'—'), (Math.floor(s.uptime_seconds/60)), (usage(s.internal_free,s.internal_total,kib)), (kib(s.internal_min)), (kib(s.internal_largest)), (usage(s.psram_free,s.psram_total,mib)));
 el('status').textContent+=t("diagnostic_flags", (s.verbose_diagnostics?t("on"):t("off")), (s.automatic_link_probe?t("on"):t("off")));
 el('metrics').textContent=t("metrics_text", (s.clients.reduce((n,c)=>n+c.tcp,0)), (s.tcp_flow_limit), (s.clients.reduce((n,c)=>n+c.udp,0)), (s.udp_flow_limit), (s.tcp_pcb_live), (s.tcp_pcb_limit), (s.tcp_pcb_peak), (s.tcp_pcb_failures), (s.ap_tx_errors), (s.sta_tx_errors), (s.clone_failures), (s.client_rto), (s.upstream_rto), (s.client_fast), (s.upstream_fast), (s.http_stack_total-s.http_stack_min), (s.http_stack_total), (s.http_stack_min), (s.reset_reason));
 el('trial').hidden=!s.pending;el('trialText').textContent=t("confirm_remaining", (s.confirm_seconds));
 const list=el('clients');list.replaceChildren();if(!s.clients.length)list.textContent=t("no_clients");for(const c of s.clients){const row=document.createElement('div');row.className='client';const text=document.createElement('pre');text.textContent=t("client_text", (c.ip), (c.mac), (c.rssi??'—'), (c.tcp), (c.udp), (mib(c.up_bytes)), (mib(c.down_bytes)), (c.tcp_denied), (c.udp_denied));row.append(text);const button=document.createElement('button');button.textContent=t("disconnect_client");button.disabled=c.ip==='0.0.0.0';button.onclick=()=>{if(window.confirm(t("disconnect_warning", (c.ip))))mutate('/api/kick',{token:c.token});};row.append(button);list.append(row);}message(s.subnet_overlap?t("subnet_warning", (s.sta_ip), (s.sta_netmask), (s.ap_ip), (s.ap_netmask)):(s.pending?t("trial_notice"):t("status_updated")));if(restarted){for(const key of ['sta_password','ap_password','admin_password'])form.elements[key].value='';}await refreshEvents();}catch(e){if(epoch===mutationEpoch){const v=operationView();message(v.restarting?t("restart_read_failed", (e.message)):t("read_failed", (e.message)));}}finally{polling=false;updateButtons(lastStatus);}}
-async function mutate(path,payload){if(busy||operationView().blocked)return;if(!lastStatus){message(t("read_first"));return;}busy=true;mutationEpoch++;const kind=payload.action||path.split('/').pop();operationFeedback.begin(kind,lastStatus,location.origin+'/',Date.now());updateButtons(lastStatus);try{const data=await api(path,payload);operationFeedback.accept(data,Date.now());if(payload.action==='internet_settings'&&data.saved===true)internetDraft=false;if(data.reboot){for(const key of ['sta_password','ap_password','admin_password'])form.elements[key].value='';}}catch(e){operationFeedback.reject(e,Date.now());}finally{busy=false;updateButtons(lastStatus);if(!operationView().otherAddress)await refresh();}}
+async function mutate(path,payload){if(busy||operationView().blocked)return;if(!lastStatus){message(t("read_first"));return;}busy=true;mutationEpoch++;const kind=payload.action||path.split('/').pop();operationFeedback.begin(kind,lastStatus,location.origin+'/',Date.now(),payload);updateButtons(lastStatus);try{const data=await api(path,payload);operationFeedback.accept(data,Date.now());if(payload.action==='internet_settings'&&data.saved===true)internetDraft=false;if(data.reboot){for(const key of ['sta_password','ap_password','admin_password'])form.elements[key].value='';}}catch(e){operationFeedback.reject(e,Date.now());}finally{busy=false;updateButtons(lastStatus);if(!operationView().otherAddress)await refresh();}}
 el('internetAuto').onchange=el('internetTarget').onchange=()=>{internetDraft=true;};
 el('saveInternet').onclick=()=>mutate('/api/action',{action:'internet_settings',enabled:el('internetAuto').checked,target:Number(el('internetTarget').value)});
 el('ledEnabled').onchange=()=>mutate('/api/action',{action:'led',enabled:el('ledEnabled').checked});
@@ -543,7 +568,7 @@ form.addEventListener('invalid',event=>{
  openDetails('configDetails');
  if(el('advancedSettings').contains(event.target))openDetails('advancedSettings');
 },true);
-form.onsubmit=e=>{e.preventDefault();const data=Object.fromEntries(new FormData(form));data.sta_open=form.elements.sta_open.checked;data.socks_port=Number(data.socks_port);data.max_clients=Number(data.max_clients);data.ap_subnet=Number(data.ap_subnet);if(window.confirm(t("save_warning", (data.ap_subnet), (currentSubnet))))mutate('/api/config',data);};
+form.onsubmit=e=>{e.preventDefault();const data=Object.fromEntries(new FormData(form));data.sta_open=form.elements.sta_open.checked;const issue=settingsValidation(data);if(issue){const field=form.elements[issue.field];openDetails('configDetails');if(el('advancedSettings').contains(field))openDetails('advancedSettings');message(t(issue.key,field.labels[0].textContent.trim(),...issue.values));field.focus();return;}data.socks_port=Number(data.socks_port);data.max_clients=Number(data.max_clients);data.ap_subnet=Number(data.ap_subnet);if(window.confirm(t("save_warning", (data.ap_subnet), (currentSubnet))))mutate('/api/config',data);};
 el('confirm').onclick=()=>mutate('/api/confirm',{});el('defaults').onclick=()=>{if(window.confirm(t("defaults_warning")))mutate('/api/defaults',{});};el('refresh').onclick=refresh;
 async function loadConfig(){const c=await api('/api/config');loadedConfig=c;currentSubnet=c.ap_subnet;for(const [key,value]of Object.entries(c))if(form.elements[key])form.elements[key].value=value;}async function init(){try{await loadConfig();}catch(e){message(t("config_read_failed", (e.message)));}await refresh();}document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});setInterval(()=>{const v=showOperation();if(!v.otherAddress&&Date.now()-lastPoll>=(v.blocked?3000:10000)){lastPoll=Date.now();refresh();}},1000);let lastPoll=Date.now();updateButtons(lastStatus);init();
 </script></html>

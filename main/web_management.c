@@ -56,13 +56,26 @@ static esp_err_t reply(httpd_req_t *req,const char *status,const char *body)
     httpd_resp_set_hdr(req,"X-Content-Type-Options","nosniff");
     return httpd_resp_sendstr(req,body);
 }
+static bool json_content_type(const char *value)
+{
+    while (*value==' ' || *value=='\t') value++;
+    const char type[]="application/json";
+    for (size_t i=0;i<sizeof(type)-1;i++) {
+        unsigned char c=(unsigned char)value[i];
+        if (c>='A' && c<='Z') c+='a'-'A';
+        if (c!=(unsigned char)type[i]) return false;
+    }
+    value+=sizeof(type)-1;
+    while (*value==' ' || *value=='\t') value++;
+    return !*value || *value==';';
+}
 static bool mutation_allowed(httpd_req_t *req)
 {
     char value[64];
     if (httpd_req_get_hdr_value_str(req,"X-Proxy-Action",value,sizeof(value))!=ESP_OK ||
         strcmp(value,"manage") ||
         httpd_req_get_hdr_value_str(req,"Content-Type",value,sizeof(value))!=ESP_OK ||
-        strcmp(value,"application/json")) {
+        !json_content_type(value)) {
         reply(req,"403 Forbidden",API_ERROR("INVALID_MANAGE_MARKER", "管理请求标识无效")); return false;
     }
     size_t n=httpd_req_get_hdr_value_len(req,"Origin");

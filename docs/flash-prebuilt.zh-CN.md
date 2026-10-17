@@ -149,13 +149,19 @@ esptool --chip esp32s3 --port COM5 --baud 115200 write-flash 0x0 images/bootload
 
 ## 维护者生成固件包
 
-在已激活 ESP-IDF 的终端、项目根目录中，完成[源码构建](build-and-flash.zh-CN.md)后执行：
+先完成 SDK 和 lwIP 准备，再按[独立公开配置构建](build-and-flash.zh-CN.md#public-release-build)操作。源码指南中建议修改 AP 密码的私人构建会被公开打包工具有意拒绝；不要为打包而重置或覆盖私人配置。在已激活的项目终端执行：
 
 ```text
-python tools/package_firmware.py --build-dir build --output-dir dist/esp32-socks5-gateway-n16r8-local
+python tools/package_firmware.py --build-dir build-release --output-dir dist/gateway-validation
 ```
 
-此命令生成完整开发/CI 校验包。正式发布应从干净的 `vYY.MM.DD` 标签构建，仅将验证后的 `factory.bin` 命名为 `esp32-socks5-gateway-vYY.MM.DD-esp32s3-n16r8-factory.bin`，`app.bin` 使用相同前缀的 `-sysupgrade.bin`。完整包留作验证，校验值写入发布说明，版权材料链接到源码包中的声明。不要分发个人口令、设备 NVS 转储或日志。打包不会发布 Release，见[工具说明](../tools/README.md)。
+这会生成完整开发/CI 校验包。正式 Release 应从**干净的 `vYY.MM.DD` 标签**构建，改用带可选导出目录的命令：
+
+```text
+python tools/package_firmware.py --build-dir build-release --output-dir dist/gateway-validation --release-dir dist/gateway-release
+```
+
+两个输出目录都必须尚不存在、彼此不同且互不嵌套。第二条命令已同时创建两份输出，不要复用第一条例子刚生成的目录。工具从已编译的应用读取版本、核对干净源码 / 标签来源，恰好导出两个规范命名的 `-factory.bin` 与 `-sysupgrade.bin`，无需手工指定文件名或覆盖版本。完整包留作验证，哈希写入英文发布说明，版权材料链接到对应源码包中的声明。不要分发个人口令、设备 NVS 转储或日志。命令不会发布到远端，见[工具说明](../tools/README.md)。
 
 ## 验证范围
 

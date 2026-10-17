@@ -37,10 +37,12 @@ void serial_commands_feed_terminal(serial_parser_t *p,const uint8_t *bytes,size_
             p->line[p->used]=0;
             bool empty=!p->discard;for(size_t n=0;n<p->used;n++)if(p->line[n]!=' ' && p->line[n]!='\t')empty=false;
             if(!empty) {
-                if(now>=p->next_ms) {
-                    p->busy_reported=false;p->next_ms=now+1000;
-                    const char *argument="";
-                    serial_command_t command=p->discard?(p->overflow?SERIAL_TOO_LONG:SERIAL_INVALID):parse(p->line,&argument);
+                const char *argument="";
+                serial_command_t command=p->discard?(p->overflow?SERIAL_TOO_LONG:SERIAL_INVALID):parse(p->line,&argument);
+                bool immediate=command==SERIAL_HELP || command==SERIAL_STATUS ||
+                    command==SERIAL_EVENTS || command==SERIAL_LOG_GET || command==SERIAL_CANCEL;
+                if(immediate || now>=p->next_ms) {
+                    if(!immediate){p->busy_reported=false;p->next_ms=now+1000;}
                     dispatch(command,argument,context);
                 } else if(!p->busy_reported){p->busy_reported=true;dispatch(SERIAL_BUSY,"",context);}
             }

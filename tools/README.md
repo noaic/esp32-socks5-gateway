@@ -13,7 +13,7 @@ python tools/prepare_lwip.py apply
 python tools/prepare_lwip.py check
 ```
 
-`apply` verifies the pinned SDK and source contents, copies its lwIP component into ignored `components/lwip`, and patches local `ip4.c`. `check` repeats verification without writing. `restore` reverses only the verified local `ip4.c` patch, without needing an SDK environment:
+`apply` verifies the pinned SDK and tracked source contents, copies only those Git-tracked files into ignored `components/lwip`, and patches local `ip4.c`; SDK-local untracked test/editor caches are not copied. `check` repeats verification without writing. Text checks allow LF/CRLF differences in both SDK and local copies; real edits, binary differences, missing tracked files, unexpected local files and symlinks are rejected. `restore` reverses only the verified local `ip4.c` patch, without needing an SDK environment:
 
 ```text
 python tools/prepare_lwip.py restore
@@ -23,10 +23,10 @@ Restore is not a full component integrity check. Run `apply`/`check` again befor
 
 ## Package and flash precompiled firmware
 
-After building a clean public-default N16R8 configuration, create a new output directory:
+Use the [isolated public-default build](../docs/build-and-flash.md#public-release-build) to keep private `sdkconfig`/`build/` settings separate. The packager intentionally rejects custom AP passwords and upstream credentials. Then create a new output directory:
 
 ```text
-python tools/package_firmware.py --build-dir build --output-dir dist/esp32-socks5-gateway-n16r8-local
+python tools/package_firmware.py --build-dir build-release --output-dir dist/esp32-socks5-gateway-n16r8-local
 ```
 
 The packager checks pinned SDK/override provenance, hardware settings, public compiled defaults and the exact three build images. It refuses private/custom compiled settings and an existing output directory. It generates:
@@ -37,9 +37,15 @@ The packager checks pinned SDK/override provenance, hardware settings, public co
 - `SHA256SUMS`, `FLASHING.md`, `LICENSE`, `THIRD_PARTY_NOTICES.md`, `LICENSES/`: checksums, instructions and applicable licenses.
 - `firmware.zip` and `firmware.zip.sha256`: the same payload in a convenient archive, with a separate archive checksum. **No host scripts are included.** `SHA256SUMS` covers payload files and the manifest, not itself or the archive.
 
-It excludes private NVS contents, `sdkconfig`, ELF files and the source checkout. Dirty source builds are identified in provenance. Packaging does not upload or publish a release. See the [precompiled guide](../docs/flash-prebuilt.md) for ordinary official-tool flashing, native checksum checks and serial monitoring.
+It excludes private NVS contents, `sdkconfig`, ELF files and the source checkout. Dirty source builds are identified in provenance. The manifest's `esptool_version` records the recommended host flashing version, not the SDK's build-time esptool dependency. Packaging does not upload or publish a release. See the [precompiled guide](../docs/flash-prebuilt.md) for ordinary official-tool flashing, native checksum checks and serial monitoring.
 
-Official Releases use `vYY.MM.DD` tags and upload only two verified copies: `factory.bin` becomes `esp32-socks5-gateway-vYY.MM.DD-esp32s3-n16r8-factory.bin`; `app.bin` becomes the matching `-sysupgrade.bin`. This remains a raw application image for serial flashing at `0x10000`, not an OTA implementation. Keep the full package for developer/CI checks. Put hashes in release notes and link notices in source archives instead of uploading the helper files.
+Official Releases use `vYY.MM.DD` tags and upload only two verified BINs. For a clean tag build, the optional exporter creates them with the compiled version in their names:
+
+```text
+python tools/package_firmware.py --build-dir build-release --output-dir dist/gateway-validation --release-dir dist/gateway-release
+```
+
+The two directories must be new, different and not nested within each other. This is an alternative to the first packaging command, not a second pass over the same output. `--release-dir` requires clean source and an exact valid `vYY.MM.DD` compiled version matching the source tag; it rejects dirty/hash versions and has no version override. It writes exactly `esp32-socks5-gateway-vYY.MM.DD-esp32s3-n16r8-factory.bin` and the matching `-sysupgrade.bin`. The latter remains a raw application image for serial flashing at `0x10000`, not OTA. Keep the full validation package, put hashes in English release notes and link notices at the matching source tag. The exporter neither commits nor publishes a Release.
 
 ### Optional repository flashing helper
 
@@ -49,7 +55,7 @@ For developers who want additional package/layout checks, `tools/flash_firmware.
 python tools/flash_firmware.py --directory dist/esp32-socks5-gateway-n16r8-local --check
 ```
 
-The same `--directory` may point to a fully extracted `firmware.zip`. To flash, install `esptool==5.5.0` in the Python environment running the helper, then specify the real port:
+The same `--directory` may point to a fully extracted `firmware.zip`. The helper accepts official esptool **5.x**; 5.5.0 is the recommended version used in the flashing examples, not an exact-version requirement. Install it in a separate virtual environment if the active SDK environment has another major version. No claim is made that every 5.x release has been tested on a physical board. Then specify the real port:
 
 ```text
 python tools/flash_firmware.py --directory dist/esp32-socks5-gateway-n16r8-local --port COM5

@@ -149,13 +149,19 @@ esptool --chip esp32s3 --port COM5 --baud 115200 write-flash 0x0 images/bootload
 
 ## メンテナーによるパッケージ作成
 
-ESP-IDF を有効にした端末のプロジェクトルートで、[ソースビルド](build-and-flash.ja.md)後に実行します。
+SDK と lwIP を準備し、[独立した配布用の既定ビルド](build-and-flash.ja.md#public-release-build)を使います。AP パスワードを変更した個人用ビルドは公開用ツールが意図的に拒否するため、個人設定を初期化・上書きしないでください。有効化済みプロジェクト端末で実行します。
 
 ```text
-python tools/package_firmware.py --build-dir build --output-dir dist/esp32-socks5-gateway-n16r8-local
+python tools/package_firmware.py --build-dir build-release --output-dir dist/gateway-validation
 ```
 
-このコマンドは完全な開発/CI 検証パッケージを作ります。正式 Release はクリーンな `vYY.MM.DD` タグからビルドし、確認済み `factory.bin` を `esp32-socks5-gateway-vYY.MM.DD-esp32s3-n16r8-factory.bin`、`app.bin` を同じ接頭辞の `-sysupgrade.bin` として公開します。完全なパッケージは検証用に保持し、ハッシュはリリースノートへ、告知はソースアーカイブへのリンクを載せます。個人の認証情報、NVS ダンプ、ログは配布しないでください。作成処理は Release を公開しません。[ツールガイド](../tools/README.md)も参照してください。
+これは開発/CI 検証用の完全パッケージを生成します。正式 Release は**変更のない `vYY.MM.DD` タグ**からビルドし、代わりに任意のエクスポート先を追加します。
+
+```text
+python tools/package_firmware.py --build-dir build-release --output-dir dist/gateway-validation --release-dir dist/gateway-release
+```
+
+両出力先は未作成で、異なるパスであり、互いに内包しない必要があります。2 番目のコマンドは両方を生成するので、最初の例で作った出力先を再利用しないでください。ツールはコンパイル済みアプリからバージョンを読み、変更のないソース/タグを検証し、規定名の `-factory.bin` と `-sysupgrade.bin` だけを書き出します。ファイル名やバージョンの手動上書きは不要です。完全パッケージは検証用に保管し、英語の Release 説明にハッシュと対応ソースの告知へのリンクを記載します。個人認証情報、NVS ダンプ、ログを配布しないでください。コマンドはリモートへ公開しません。[ツールガイド](../tools/README.md)も参照してください。
 
 ## 検証の範囲
 

@@ -67,6 +67,8 @@ TCP 和 UDP 分别使用固定的转发循环，检查哪些连接现在能收�
 
 更完整的数据路径和模块职责见 [架构说明](architecture.md)。初次使用只需先掌握配置步骤，再按兴趣阅读实现。
 
+详细 CPU / 运行时间统计、RX 缓冲引用跟踪和 Wi-Fi TX 完成观察仅由 `CONFIG_PROXY_VERBOSE_DIAGNOSTICS` 启用；基础 Web 状态 / 错误计数保留。源码默认关闭这些细粒测量，已有 `sdkconfig` 仍保留原值，比较构建时需先检查。没有新的板上测速，不能宣称吞吐提升。
+
 ## 运行现有回归测试
 
 测试在开发电脑上编译并执行部分 C 逻辑，因此称为“宿主测试”，无需连接 ESP32 板。先成功构建一次固件，确保锁定的 cJSON 已下载到 `managed_components/`。
@@ -116,6 +118,7 @@ NODE_PATH="$BROWSER_TEST_TOOLS/node_modules" PLAYWRIGHT_BROWSERS_PATH="$BROWSER_
 | `patches/` | lwIP 补丁及版本 / 哈希信息 |
 | `tools/` | 补丁准备、串口采集、网络探测和测速工具 |
 | `tests/` | C/Python 宿主测试和 JavaScript 前端测试 |
+| `experiments/` | 留存的缓冲 / 回包实验模块，供主机测试使用，不链接进固件 |
 | `examples/` | Xray 完整客户端示例、字段位置说明及配置片段 |
 | `sdkconfig.defaults` | 初次配置的默认硬件和功能参数 |
 | `dependencies.lock` | 固件组件版本记录 |

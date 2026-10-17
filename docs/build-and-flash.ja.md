@@ -133,9 +133,9 @@ python3 tools/prepare_lwip.py check
 
 すでに取得済みなら、そのディレクトリに移動してください。以降のプロジェクトコマンドは、**`CMakeLists.txt` があるプロジェクトのルート**で実行します。
 
-`patches/lwip-v6.1-transparent-tcp.patch` は `ip4.c` の変更、`patches/lwip-v6.1.json` はコミットと変更前後の SHA-256 を記録します。スクリプトは `$IDF_PATH/components/lwip` のコンポーネント全体と lwIP サブモジュールを、プロジェクトの `components/lwip` にコピーし、そのコピーだけを変更します。ESP-IDF の [同名コンポーネントの優先順位](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/api-guides/build-system.html#multiple-components-with-the-same-name)により、プロジェクト側が使われます。全体の SDK やほかのプロジェクトには影響せず、生成ディレクトリは Git の対象外です。
+`patches/lwip-v6.1-transparent-tcp.patch` は `ip4.c` の変更、`patches/lwip-v6.1.json` はコミットと変更前後の SHA-256 を記録します。スクリプトは `$IDF_PATH/components/lwip` と lwIP サブモジュールの Git 管理下ファイルを、プロジェクトの `components/lwip` にコピーし、そのコピーだけを変更します。ESP-IDF の [同名コンポーネントの優先順位](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/api-guides/build-system.html#multiple-components-with-the-same-name)により、プロジェクト側が使われます。全体の SDK やほかのプロジェクトには影響せず、生成ディレクトリは Git の対象外です。
 
-`ip4.c` のハッシュ検証では、メモリー上で CRLF を LF として扱い、既存の固定ハッシュを維持します。`apply` と `restore` は検証済みのプロジェクト側のコピーだけを LF で保存します。パッチが CRLF でも、そのファイルを書き換えずに利用できます。`check` は読み取り専用です。コピーや検証の前に、`apply`/`check` は **SDK 全体の lwIP コンポーネントとサブモジュールを Git のコミット内容と比較**します。HEAD が正しくても、編集、欠落、追加されたソースファイルは拒否します。テキストは LF/CRLF のチェックアウト差を許可し、バイナリーはバイト単位で一致する必要があります。コードや空白の編集、BOM、単独の CR の差は許可しません。ローカルコピーも、パッチ済みの `ip4.c` 以外は検証済み SDK と一致する必要があります。
+`ip4.c` のハッシュ検証はメモリー上で CRLF を LF として扱い、既存のハッシュを維持します。`apply` と `restore` は検証済みプロジェクトコピーだけを LF で保存します。パッチが CRLF でも、そのファイルを書き換えずに利用できます。`check` は読み取り専用です。`apply`/`check` は **SDK の lwIP コンポーネント/サブモジュールの Git 管理下ファイルをコミット内容と比較**し、HEAD が一致していても内容を調べます。SDK 内の未管理テスト/編集キャッシュは無視し、コピーしません。プロジェクト側には管理下ファイルだけが必要で、差分は所定の `ip4.c` パッチに限ります。すべてのテキスト比較で LF/CRLF の差を許可し、バイナリーはバイト単位で一致させます。コード/空白の編集、BOM、単独の CR、管理下ファイルの欠落、ローカルコピーの予期しない追加ファイル、シンボリックリンクは拒否します。
 
 次のコマンドは、どちらの有効化済みターミナルでも使えます。Linux では `python3` も使えます。
 
@@ -176,6 +176,29 @@ idf.py size
 `sdkconfig.defaults` は ESP32-S3、Flash、PSRAM などの初期設定を提供します。既存の `sdkconfig` を上書きしないため、古い設定を使う場合もボードの仕様を確認してください。
 
 Linux x86_64 のパッチ準備、ビルド、容量確認は検証済みです。Windows 11/EIM、各ディストリビューションのパッケージ導入、WSL2 USB は公式説明と照合していますが、各環境と実機での確認が必要です。
+
+<a id="public-release-build"></a>
+
+### 配布用の既定ファームウェアを別にビルドする
+
+自分のボード用の `sdkconfig` と `build/` は保持できます。公開用パッケージツールは独自の AP パスワードや上流の認証情報を意図的に拒否します。配布用は、有効化済みのプロジェクト端末で**別の、まだ使っていない** `build-release/` と設定ファイルを使います。
+
+Windows PowerShell：
+
+```powershell
+$ReleaseConfig = Join-Path (Get-Location) 'build-release\sdkconfig'
+idf.py -B build-release -D "SDKCONFIG=$ReleaseConfig" build
+idf.py -B build-release size
+```
+
+Linux/WSL2 Bash：
+
+```bash
+idf.py -B build-release -D SDKCONFIG="$PWD/build-release/sdkconfig" build
+idf.py -B build-release size
+```
+
+新しい設定は `sdkconfig.defaults` の公開用既定値を使います。上流 Wi-Fi は空で、初期 AP の共通パスワードは `esp32proxy` です。書き込み後の初回設定で AP パスワードを変更してください。プロジェクトルートの個人用 `sdkconfig` は上書きしません。`build-release/sdkconfig` が既存なら、その値が優先されます。内容を確認するか別の未使用パスを選び、個人設定をコピーしないでください。次は[パッケージ作成](flash-prebuilt.ja.md#メンテナーによるパッケージ作成)へ進みます。
 
 ## 4. 自分でビルドしたファームウェアを書き込む
 

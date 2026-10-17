@@ -82,19 +82,40 @@ def apply_patch(directory, reverse=False):
         path.write_bytes(lf_bytes(staged_file.read_bytes()))
 
 
-def verify_component(source, target):
-    # Other files remain byte-for-byte copies, including binary files.
-    def files(directory):
-        return {path.relative_to(directory) for path in directory.rglob("*")
-                if path.is_file() and ".git" not in path.relative_to(directory).parts
-                and "__pycache__" not in path.relative_to(directory).parts}
-    source_files = files(source)
-    if source_files != files(target):
+def checked_file(directory, relative):
+    path = directory / relative
+    for candidate in (path, *path.parents):
+        if candidate.is_symlink():
+            raise RuntimeError(f"SDK/override symlink is not allowed: {candidate}")
+        if candidate == directory:
+            break
+    if not path.is_file():
+        raise RuntimeError(f"SDK/override source missing: {relative}")
+    return path
+
+
+def same_content(baseline, actual):
+    # Git's text heuristic: NUL-containing data is binary and must match exactly.
+    # For text, only checkout line endings may differ, never BOM/space/lone CR.
+    if b"\0" not in baseline:
+        baseline, actual = lf_bytes(baseline), lf_bytes(actual)
+    return baseline == actual
+
+
+def verify_component(source, target, source_files):
+    target_files = set()
+    for path in target.rglob("*"):
+        if path.is_symlink():
+            raise RuntimeError(f"SDK/override symlink is not allowed: {path}")
+        if path.is_file():
+            target_files.add(path.relative_to(target))
+    if source_files != target_files:
         raise RuntimeError("Local component file list differs from pinned source; "
                            "back up and review the local override")
     for relative in source_files:
         # Compare Path objects: str(relative) uses backslashes on Windows.
-        if relative != Path(META["file"]) and digest(source / relative) != digest(target / relative):
+        if relative != Path(META["file"]) and not same_content(
+                checked_file(source, relative).read_bytes(), checked_file(target, relative).read_bytes()):
             raise RuntimeError(f"Local component has an additional modification: {relative}; "
                                "back up and review the local override")
 
@@ -122,33 +143,25 @@ def verify_source(idf, source):
             if kind != b"blob" or mode == b"120000":
                 raise RuntimeError(f"Unsupported SDK file type: {relative}")
             expected.add(relative)
-            blobs.append((object_id, repository / path, relative))
+            blobs.append((object_id, relative))
         if not blobs:
             raise RuntimeError("SDK component has no tracked source files")
         output = subprocess.check_output(["git", "cat-file", "--batch"], cwd=repository,
-                                         input=b"".join(object_id+b"\n" for object_id, _, _ in blobs))
+                                         input=b"".join(object_id+b"\n" for object_id, _ in blobs))
         offset = 0
-        for _, path, relative in blobs:
+        for _, relative in blobs:
             end = output.index(b"\n", offset)
             size = int(output[offset:end].split()[-1]); offset = end+1
             baseline = output[offset:offset+size]; offset += size+1
-            if not path.is_file() or path.is_symlink():
-                raise RuntimeError(f"SDK source missing or symlinked: {relative}")
-            actual = path.read_bytes()
+            actual = checked_file(source, relative).read_bytes()
             # Accept only CRLF/LF checkout differences for text, never binary
             # modifications, whitespace edits, BOM or lone CR differences.
-            if b"\0" not in baseline:
-                actual, baseline = lf_bytes(actual), lf_bytes(baseline)
-            if actual != baseline:
+            if not same_content(baseline, actual):
                 raise RuntimeError(f"Global SDK component has an uncommitted modification: {relative}; "
                                    "back up and review the SDK; nothing was overwritten")
     tree(idf, "components/lwip", Path())
     tree(source / "lwip", None, Path("lwip"))
-    actual = {path.relative_to(source) for path in source.rglob("*")
-              if path.is_file() and ".git" not in path.relative_to(source).parts
-              and "__pycache__" not in path.relative_to(source).parts}
-    if actual != expected:
-        raise RuntimeError("SDK component contains missing or untracked files; back up and review it")
+    return expected
 
 
 def main():
@@ -182,21 +195,25 @@ def main():
     if digest(source / META["file"], normalize=True) != META["original_sha256"]:
         raise RuntimeError("Global IDF ip4.c has changes beyond LF/CRLF line endings; "
                            "refusing to copy. Review the SDK file; the script has not modified it")
-    verify_source(idf, source)
+    source_files = verify_source(idf, source)
     if not TARGET.exists():
         if args.action == "check":
             raise RuntimeError("Override missing; run prepare_lwip.py apply")
         TARGET.parent.mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="lwip-stage-", dir=TARGET.parent) as temporary:
             staged = Path(temporary) / "lwip"
-            shutil.copytree(source, staged, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+            # Copy only pinned Git inputs, not SDK test builds/editor caches.
+            for relative in sorted(source_files):
+                destination = staged / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(checked_file(source, relative), destination)
             apply_patch(staged)
             require_state(staged, "patched")
-            verify_component(source, staged)
+            verify_component(source, staged, source_files)
             staged.rename(TARGET)
     else:
         current = state(TARGET)
-        verify_component(source, TARGET)
+        verify_component(source, TARGET, source_files)
         if current == "original":
             if args.action == "check":
                 raise RuntimeError("Override restored; run prepare_lwip.py apply")

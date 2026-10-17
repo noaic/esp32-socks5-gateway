@@ -17,22 +17,27 @@ int main(void){
  feed("log\t info \r\n",5000);assert(got[4]==SERIAL_LOG_INFO);
  feed("log warn\n",6000);assert(got[5]==SERIAL_LOG_WARN);
  feed("log off\n",7000);assert(got[6]==SERIAL_LOG_OFF);
- feed("status\nhelp\nhelp\n",7001);assert(count==8 && got[7]==SERIAL_BUSY);
- feed("statusx\b\n",8000);assert(got[8]==SERIAL_STATUS);
- feed("status\x1b[0m\n",9000);assert(got[9]==SERIAL_INVALID);
+ feed("status\nhelp\nhelp\n",7001);assert(count==10 && got[7]==SERIAL_STATUS && got[8]==SERIAL_HELP && got[9]==SERIAL_HELP);
+ feed("statusx\b\n",8000);assert(got[10]==SERIAL_STATUS);
+ feed("status\x1b[0m\n",9000);assert(got[11]==SERIAL_INVALID);
  char huge[200];memset(huge,'x',sizeof(huge));serial_commands_feed(&parser,(uint8_t *)huge,sizeof(huge),10000,capture,(void *)1);
- feed("\bhelp\n",10000);assert(got[10]==SERIAL_TOO_LONG);
- feed("help\n",11000);assert(got[11]==SERIAL_HELP);
- feed("log info extra\n",12000);assert(got[12]==SERIAL_UNKNOWN);
- feed(" \t\r\n\n",13000);assert(count==13);
- feed("reset-admin\n",14000);assert(got[13]==SERIAL_RESET_ADMIN);
- uint8_t binary[]={'h','e','l','p',0,'\n'};serial_commands_feed(&parser,binary,sizeof(binary),15000,capture,(void *)1);assert(got[14]==SERIAL_INVALID);
- feed("reset-network\n",16000);assert(got[15]==SERIAL_RESET_NETWORK);
- feed("confirm ABCD1234\n",17000);assert(got[16]==SERIAL_CONFIRM && !strcmp(arguments[16],"ABCD1234"));
- feed("cancel\n",18000);assert(got[17]==SERIAL_CANCEL);
- feed("confirm\n",19000);assert(got[18]==SERIAL_CONFIRM && !arguments[18][0]);
- feed("confirm\t abcd1234 extra\n",20000);assert(got[19]==SERIAL_CONFIRM && !strcmp(arguments[19],"abcd1234 extra"));
- feed("reset-network extra\n",21000);assert(got[20]==SERIAL_UNKNOWN);
+ feed("\bhelp\n",10000);assert(got[12]==SERIAL_TOO_LONG);
+ feed("help\n",11000);assert(got[13]==SERIAL_HELP);
+ feed("log info extra\n",12000);assert(got[14]==SERIAL_UNKNOWN);
+ feed(" \t\r\n\n",13000);assert(count==15);
+ feed("reset-admin\n",14000);assert(got[15]==SERIAL_RESET_ADMIN);
+ uint8_t binary[]={'h','e','l','p',0,'\n'};serial_commands_feed(&parser,binary,sizeof(binary),15000,capture,(void *)1);assert(got[16]==SERIAL_INVALID);
+ feed("reset-network\n",16000);assert(got[17]==SERIAL_RESET_NETWORK);
+ feed("confirm ABCD1234\n",17000);assert(got[18]==SERIAL_CONFIRM && !strcmp(arguments[18],"ABCD1234"));
+ feed("cancel\n",18000);assert(got[19]==SERIAL_CANCEL);
+ feed("confirm\n",19000);assert(got[20]==SERIAL_CONFIRM && !arguments[20][0]);
+ feed("confirm\t abcd1234 extra\n",20000);assert(got[21]==SERIAL_CONFIRM && !strcmp(arguments[21],"abcd1234 extra"));
+ feed("reset-network extra\n",21000);assert(got[22]==SERIAL_UNKNOWN);
+ feed("reset-admin\nconfirm ABCD1234\nstatus\nhelp\nlog\nevents\ncancel\n",22000);
+ assert(count==30 && got[23]==SERIAL_RESET_ADMIN && got[24]==SERIAL_BUSY && got[25]==SERIAL_STATUS &&
+        got[26]==SERIAL_HELP && got[27]==SERIAL_LOG_GET && got[28]==SERIAL_EVENTS && got[29]==SERIAL_CANCEL);
+ feed("confirm ABCD1234\n",22001);assert(count==30); /* Reads/cancel do not reset the change throttle. */
+ feed("confirm ABCD1234\n",23000);assert(count==31 && got[30]==SERIAL_CONFIRM);
  return 0;
 }
 '''
@@ -59,7 +64,7 @@ int main(void){
  used=0;output[0]=0;char longline[150];memset(longline,'x',sizeof(longline));longline[149]='\n';
  serial_commands_feed_terminal(&p,(uint8_t *)longline,sizeof(longline),4000,dispatch,NULL,&t);
  assert(got==SERIAL_TOO_LONG&&used==95+1+3+9);
- serial_commands_feed_terminal(&p,(uint8_t *)"help\n",5,4001,dispatch,NULL,&t);assert(got==SERIAL_BUSY);
+ serial_commands_feed_terminal(&p,(uint8_t *)"help\n",5,4001,dispatch,NULL,&t);assert(got==SERIAL_HELP&&count==4);
  return 0;
 }
 '''

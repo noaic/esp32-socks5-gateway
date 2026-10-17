@@ -72,5 +72,30 @@ int main(void)
     assert(flow_table_expire(&table,101,100)==0);
     assert(flow_table_expire(&table,102,100)==256 && table.owned[0]==0 && table.owned[1]==256);
     assert(flow_table_expire(&table,103,100)==256 && table.used==0);
+    /* Simulated time, not a radio benchmark: a sustained stream of distinct
+     * short connections must preserve the other slot and recover after 2MSL. */
+    flow_table_init(&table);
+    p=(proxy_tcp_packet_t){.src_ip=1,.dst_ip=2,.dst_port=443,.flags=2};
+    const int64_t guard=120000000;
+    unsigned accepted=0,rejected=0;
+    for(unsigned i=0;i<400;i++) {
+        int64_t now=(int64_t)i*250000;
+        flow_table_expire(&table,now,guard);
+        p.src_port=1000+i;
+        int index=flow_table_input_owned(&table,&p,2,now,&snapshot,&created);
+        if(index<0){rejected++;continue;}
+        accepted++;assert(created && flow_table_claim(&table,index,&snapshot));
+        flow_table_retire(&table,index,now);
+    }
+    assert(accepted==PROXY_CLIENT_TCP_MAPPINGS && rejected==400-accepted);
+    p.src_ip=2;p.src_port=60000;
+    int other=flow_table_input_owned(&table,&p,3,100000000,&snapshot,&created);
+    assert(other>=0 && created && flow_table_claim(&table,other,&snapshot));
+    flow_table_retire(&table,other,100000000);
+    assert(flow_table_expire(&table,guard-1,guard)==0);
+    assert(flow_table_expire(&table,guard,guard)==1);
+    p.src_ip=1;p.src_port=65000;
+    assert(flow_table_input_owned(&table,&p,2,guard,&snapshot,&created)>=0 && created);
+    printf("PASS: simulated 400 short connections/100s: accepted=%u rejected=%u; other slot and guarded recovery preserved\n",accepted,rejected);
     puts("PASS: shared source-port isolation, full capacity, guards, hash unlink/reuse");
 }

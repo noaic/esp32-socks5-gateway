@@ -64,6 +64,7 @@ static struct tcp_pcb *expected_pcb;
 static memp_t expected_pool;
 static void *pool_result;
 static unsigned pool_alloc_calls,pool_free_calls;
+static unsigned clock_calls,observer_calls;
 
 void *memp_malloc(memp_t type)
 { assert(type==expected_pool); pool_alloc_calls++; return pool_result; }
@@ -92,6 +93,7 @@ void esp_netif_free_rx_buffer(void *n,void *p)
 void esp_netif_netstack_buf_free(void *p) { free_calls++; if (p) held--; }
 int64_t esp_timer_get_time(void)
 {
+    clock_calls++;
     static int64_t time=1000000;
     int64_t sampled=(time+=1000);
     if (inject_done_during_clock) {
@@ -101,7 +103,7 @@ int64_t esp_timer_get_time(void)
     }
     return sampled;
 }
-esp_err_t esp_wifi_set_tx_done_cb(wifi_tx_done_cb_t cb) { done_callback=cb; return ESP_OK; }
+esp_err_t esp_wifi_set_tx_done_cb(wifi_tx_done_cb_t cb) { observer_calls++; done_callback=cb; return ESP_OK; }
 void test_done(uint8_t id,uint8_t *frame,uint16_t *len,bool ok) { assert(done_callback); done_callback(id,frame,len,ok); }
 void tcp_rexmit_rto_commit(struct tcp_pcb *pcb)
 { assert(pcb==expected_pcb); rto_calls++; }
@@ -121,13 +123,31 @@ int main(void)
 {
     net_diagnostics_init(&ap,&sta);
     assert(net_diagnostics_start_wifi()==ESP_OK);
+#if CONFIG_PROXY_VERBOSE_DIAGNOSTICS
+    assert(done_callback && observer_calls==1);
+#else
+    assert(!done_callback && observer_calls==0);
+#endif
     run_test_calls();
     assert(driver_calls==8 && rto_calls==3 && fast_calls==5);
     assert(rx_calls==3 && ref_calls==3 && free_calls==3 && held==0);
     assert(rx_frees==3);
     assert(pool_alloc_calls==4 && pool_free_calls==4);
+    net_diagnostics_snapshot_t metrics; net_diagnostics_snapshot(&metrics);
+    assert(metrics.tcp_pcb_live==0 && metrics.tcp_pcb_peak==2 && metrics.tcp_pcb_failures==1);
+    assert(metrics.ap_tx_errors==2 && metrics.sta_tx_errors==2 && metrics.clone_failures==2);
+    assert(metrics.client_rto==1 && metrics.upstream_rto==1);
+    assert(metrics.client_fast==1 && metrics.upstream_fast==1);
+#if CONFIG_PROXY_VERBOSE_DIAGNOSTICS
     inject_done_during_clock=true;
-    net_diagnostics_log(); puts("wrapper contract passed"); return 0;
+    net_diagnostics_log();
+    assert(clock_calls>0);
+#else
+    net_diagnostics_log();
+    assert(clock_calls==0);
+    puts("basic counters passed; no detailed clock samples or TX observer");
+#endif
+    puts("wrapper contract passed"); return 0;
 }
 '''
 CALLER = r'''
@@ -215,6 +235,7 @@ void run_test_calls(void)
     esp_netif_netstack_buf_free(&opaque); esp_netif_netstack_buf_free(&opaque);
     esp_netif_netstack_buf_ref(NULL); esp_netif_netstack_buf_free(NULL);
     assert(opaque==987);
+#if CONFIG_PROXY_VERBOSE_DIAGNOSTICS
     uint8_t frame[24]={0x88}; frame[4]=0x02;
     uint8_t saved[24]; memcpy(saved,frame,24);
     uint16_t len=24;
@@ -228,12 +249,14 @@ void run_test_calls(void)
     uint8_t short_frame[1]={0x88}; uint16_t short_len=1;
     test_done(WIFI_IF_AP,short_frame,&short_len,true);
     test_done(WIFI_IF_AP,NULL,&len,true); test_done(WIFI_IF_AP,frame,NULL,true);
+#endif
 }
 '''
 
 
 class DiagnosticTests(unittest.TestCase):
-    def test_wrapped_calls_preserve_packets_results_and_pcbs(self):
+    @staticmethod
+    def run_harness(verbose):
         with tempfile.TemporaryDirectory(prefix='esp-net-diag-test-') as directory:
             path = pathlib.Path(directory)
             (path / 'mock_api.h').write_text(API)
@@ -246,19 +269,36 @@ class DiagnosticTests(unittest.TestCase):
             (path / 'harness.c').write_text(HARNESS)
             (path / 'caller.c').write_text(CALLER)
             binary = path / 'check'
+            wrappers = ['esp_netif_transmit_wrap', 'tcp_rexmit_rto_commit',
+                        'tcp_rexmit_fast', 'memp_malloc', 'memp_free']
+            if verbose:
+                wrappers += ['esp_netif_receive', 'esp_netif_free_rx_buffer',
+                             'esp_netif_netstack_buf_ref', 'esp_netif_netstack_buf_free']
             subprocess.run(['gcc', '-std=c11', '-O2', '-Wall', '-Wextra', '-Werror',
+                            f'-DCONFIG_PROXY_VERBOSE_DIAGNOSTICS={int(verbose)}',
                             '-I', str(path), '-I', str(ROOT / 'main'),
                             str(path / 'harness.c'), str(path / 'caller.c'),
                             str(ROOT / 'main/net_diagnostics.c'),
-                            '-Wl,--wrap=esp_netif_transmit_wrap',
-                            '-Wl,--wrap=esp_netif_receive',
-                            '-Wl,--wrap=esp_netif_free_rx_buffer',
-                            '-Wl,--wrap=esp_netif_netstack_buf_ref',
-                            '-Wl,--wrap=esp_netif_netstack_buf_free',
-                            '-Wl,--wrap=tcp_rexmit_rto_commit',
-                            '-Wl,--wrap=tcp_rexmit_fast', '-Wl,--wrap=memp_malloc',
-                            '-Wl,--wrap=memp_free', '-o', str(binary)], check=True)
+                            *[f'-Wl,--wrap={symbol}' for symbol in wrappers],
+                            '-o', str(binary)], check=True)
             result = subprocess.check_output([str(binary)], text=True)
+            symbols = subprocess.check_output(['nm', str(binary)], text=True)
+        return result, symbols
+
+    def test_default_keeps_basic_counters_without_detailed_wrappers(self):
+        result, symbols = self.run_harness(False)
+        self.assertIn('basic counters passed; no detailed clock samples or TX observer', result)
+        self.assertIn('wrapper contract passed', result)
+        self.assertNotIn('driver_rx', result)
+        for symbol in ('esp_netif_receive', 'esp_netif_free_rx_buffer',
+                       'esp_netif_netstack_buf_ref', 'esp_netif_netstack_buf_free'):
+            self.assertNotIn(f'__wrap_{symbol}', symbols)
+
+    def test_verbose_wrapped_calls_preserve_packets_results_and_pcbs(self):
+        result, symbols = self.run_harness(True)
+        for symbol in ('esp_netif_receive', 'esp_netif_free_rx_buffer',
+                       'esp_netif_netstack_buf_ref', 'esp_netif_netstack_buf_free'):
+            self.assertIn(f'__wrap_{symbol}', symbols)
         self.assertIn('AP calls=5 mem=1 buf=1 other=0 STA calls=2 mem=1 buf=0 other=1', result)
         self.assertIn('ARP_missing=1 ARP_ready=1 driver_called=1', result)
         self.assertIn('tcp_clone_fail input=1 output=1', result)

@@ -31,7 +31,8 @@ const baseStatus={boot_id:101,job_id:0,job_action:0,job_running:false,job_result
    const page=await context.newPage(),errors=[],consoleErrors=[];
    page.on('pageerror',error=>errors.push(error.message));
    page.on('console',message=>{if(message.type()==='error')consoleErrors.push(message.text());});
-   let config={...baseConfig},status={...baseStatus},reject=false,posts=[],checks=0;
+   page.on('dialog',dialog=>dialog.accept());
+   let config={...baseConfig},status={...baseStatus},reject=false,dropImmediate='',posts=[],checks=0;
    const check=(condition,label)=>{checks++;assert(condition,locale+'/'+width+': '+label);};
    await page.route('**/*',async route=>{
     const request=route.request(),url=new URL(request.url());
@@ -45,6 +46,15 @@ const baseStatus={boot_id:101,job_id:0,job_action:0,job_running:false,job_result
      if(reject)return route.fulfill({status:409,contentType:'application/json',body:'{"code":"CONTROL_UNAVAILABLE","error":"busy"}'});
      if(payload.action==='internet_settings'){
       status={...status,internet_auto:payload.enabled,internet_target:payload.target};data={saved:true};
+      if(dropImmediate)return route.abort('failed');
+     }else if(payload.action==='led'){
+      if(dropImmediate!=='unapplied')status={...status,led_enabled:payload.enabled};
+      if(dropImmediate)return route.abort('failed');
+      data={saved:true};
+     }else if(url.pathname==='/api/confirm'){
+      status={...status,pending:false};data={confirmed:true};
+     }else if(url.pathname==='/api/config'){
+      data={reboot:true,confirm_seconds:180,management_url:'http://192.168.4.1/'};
      }else if(payload.action==='diagnose'||payload.action==='internet'){
       status={...status,job_id:status.job_id+1,job_action:payload.action==='diagnose'?4:5,
        job_running:false,job_result:0,probe:[0,0,0].map(code=>({code,ms:1}))};
@@ -127,14 +137,61 @@ const baseStatus={boot_id:101,job_id:0,job_action:0,job_running:false,job_result
    check(posts.length===mutations,'invalid form does not POST');
    await page.locator('input[name="dns_ipv4"]').fill('1.1.1.1');
    await apply();
+   await page.locator('#configDetails').evaluate(node=>node.open=true);
+   await page.locator('#advancedSettings').evaluate(node=>node.open=true);
+   const beforeUTF8=posts.length;
+   await page.locator('input[name="admin_password"]').fill('管理测');
+   await page.locator('#settings button[type="submit"]').click();
+   check(posts.length===beforeUTF8&&(await page.locator('#message').textContent()).includes('UTF-8'),'9-byte management password has a localized byte error');
+   await page.locator('input[name="admin_password"]').fill('中'.repeat(22));
+   await page.locator('#settings button[type="submit"]').click();
+   check(posts.length===beforeUTF8,'66-byte management password never reaches the API');
+   await page.locator('input[name="admin_password"]').fill('管理测试');
+   await page.locator('input[name="ap_ssid"]').fill('中'.repeat(11));
+   await page.locator('#settings button[type="submit"]').click();
+   check(posts.length===beforeUTF8,'33-byte SSID never reaches the API');
+   await page.locator('input[name="ap_ssid"]').fill('中'.repeat(10)+'ab');
+   await page.locator('input[name="ap_password"]').fill('中文ab');
+   await page.locator('#settings button[type="submit"]').click();await idle();
+   check(posts.length===beforeUTF8+1&&posts.at(-1).payload.admin_password==='管理测试'&&posts.at(-1).payload.ap_password==='中文ab','valid UTF-8 passwords submit through the real form');
+   check(await page.evaluate(()=>operationView().blocked),'network changes retain the restart wait');
+   await apply({boot_id:status.boot_id+1});
+   await apply({pending:true,confirm_seconds:120});
+   await page.locator('#statusDetails').evaluate(node=>node.open=true);
+   const beforeLost=posts.length;dropImmediate='unapplied';
+   await page.locator('#ledEnabled').uncheck();await idle();
+   check(!await page.locator('#confirm').isDisabled(),'lost LED response leaves configuration confirmation enabled');
+   await page.evaluate(()=>refresh());await idle();
+   check(posts.length===beforeLost+1,'status reads never replay a lost instant POST');
+   dropImmediate='';await page.locator('#confirm').click();await idle();
+   check(!status.pending&&posts.at(-1).path==='/api/confirm','confirmation works before the old 90-second wait');
+   status={...status,led_enabled:true};await page.evaluate(()=>refresh());await idle();dropImmediate='applied';
+   await page.locator('#ledEnabled').uncheck();await idle();
+   check(!await page.evaluate(()=>operationView().blocked)&&(await page.locator('#operation').textContent()).includes(locale==='zh-CN'?'已达到':'now visible'),'observed LED target resolves a lost response');
+   await page.locator('#diagnosticsDetails').evaluate(node=>node.open=true);
+   await page.locator('#internetAuto').uncheck();await page.locator('#saveInternet').click();await idle();
+   check(!await page.evaluate(()=>internetDraft),'observed saved check settings clear the unsaved draft');
+   dropImmediate='';
    for(const id of ['configDetails','diagnosticsDetails','statusDetails','maintenanceDetails'])
     await page.locator('#'+id).evaluate(node=>node.open=false);
    check(errors.length===0,'no uncaught browser errors: '+errors.join('; '));
    check(!consoleErrors.some(error=>error.includes('not focusable')),'collapsed fields remain focusable for validation');
    await page.unroute('**/*');
-   await page.route('**/*',route=>route.fulfill({contentType:'text/html',body:setup}));
+   let setupPosts=[];
+   await page.route('**/*',route=>{
+    if(route.request().method()==='POST'){setupPosts.push(route.request().postDataJSON());return route.fulfill({contentType:'application/json',body:'{"configured":true}'});}
+    return route.fulfill({contentType:'text/html',body:setup});
+   });
    await page.reload();
    check(await page.locator('html').getAttribute('lang')===(locale==='zh-CN'?'zh-CN':'en'),'first-use language preserved');
+   for(const password of ['管理测','中'.repeat(22)]){
+    await page.locator('#password').fill(password);await page.locator('#confirm').fill(password);
+    await page.locator('#save').click();
+    check(setupPosts.length===0,'first-use page rejects out-of-range UTF-8 byte lengths');
+   }
+   await page.locator('#password').fill('管理测试');await page.locator('#confirm').fill('管理测试');
+   await page.locator('#save').click();await page.locator('#login').waitFor({state:'visible'});
+   check(setupPosts.length===1&&setupPosts[0].password==='管理测试','first-use page accepts a 12-byte / four-character password');
    check(errors.length===0,'first-use page has no uncaught error');
    console.log(`Chromium ${locale} ${width}px: ${checks} assertions PASS`);
    await context.close();
